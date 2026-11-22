@@ -9,12 +9,79 @@ import { computeSlaDeadline } from '../services/slaService.js';
 
 const router = express.Router();
 
-// Pre-analyze draft complaint (AI Civic Intelligence + Duplicate Detection preview)
-router.post('/analyze-draft', requireAuth, rateLimit({ windowMs: 60000, max: 25 }), uploadMiddleware.single('media'), async (req, res) => {
+function parseMetadataField(raw) {
+  if (!raw) return null;
+  if (typeof raw === 'object') return raw;
   try {
-    const { title = '', description = '', category = '', address = '', latitude = 27.4924, longitude = 77.6737 } = req.body || {};
-    if (!description || description.trim().length < 10) {
-      return res.status(400).json({ error: 'Please enter at least 10 characters of description for AI analysis.' });
+    return JSON.parse(String(raw));
+  } catch {
+    return null;
+  }
+}
+
+// Fast real-time AI suggestion engine (text + client-extracted image metadata before submission)
+router.post('/live-suggest', requireAuth, rateLimit({ windowMs: 60000, max: 90 }), async (req, res) => {
+  try {
+    const {
+      title = '',
+      description = '',
+      category = '',
+      address = '',
+      latitude = 27.4924,
+      longitude = 77.6737,
+      imageMetadata = null,
+    } = req.body || {};
+
+    const combinedLen = `${title} ${description}`.trim().length;
+    const parsedMeta = parseMetadataField(imageMetadata);
+
+    if (combinedLen < 3 && !parsedMeta) {
+      return res.status(400).json({ error: 'Enter at least 3 characters or attach an image for live AI suggestions.' });
+    }
+
+    const aiResult = await analyzeCivicIssue({
+      title: String(title).trim(),
+      description: String(description).trim(),
+      userCategory: category,
+      address: String(address || '').trim(),
+      imageMetadata: parsedMeta,
+      fastMode: true,
+    });
+
+    const duplicates = findPotentialDuplicates({
+      title: String(title),
+      description: String(description),
+      category: aiResult.predictedCategory,
+      latitude: Number(latitude),
+      longitude: Number(longitude),
+      embedding: null,
+    });
+
+    return res.json({
+      analysis: aiResult,
+      duplicates,
+      analyzedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Live AI suggestion failed.' });
+  }
+});
+
+// Pre-analyze draft complaint (Multimodal Photo + AI Civic Intelligence + Embedding Duplicate Detection preview)
+router.post('/analyze-draft', requireAuth, rateLimit({ windowMs: 60000, max: 30 }), uploadMiddleware.single('media'), async (req, res) => {
+  try {
+    const {
+      title = '',
+      description = '',
+      category = '',
+      address = '',
+      latitude = 27.4924,
+      longitude = 77.6737,
+      imageMetadata = null,
+    } = req.body || {};
+    const parsedMeta = parseMetadataField(imageMetadata);
+    if ((!description || description.trim().length < 5) && !req.file && !parsedMeta) {
+      return res.status(400).json({ error: 'Please enter a short description or attach a photo for AI analysis.' });
     }
 
     const aiResult = await analyzeCivicIssue({
@@ -24,6 +91,7 @@ router.post('/analyze-draft', requireAuth, rateLimit({ windowMs: 60000, max: 25 
       address,
       imagePath: req.file?.path,
       imageMimeType: req.file?.mimetype,
+      imageMetadata: parsedMeta,
     });
 
     const embedding = await generateEmbedding(`${title} ${description} ${aiResult.predictedCategory}`);
@@ -57,6 +125,7 @@ router.post('/', requireAuth, uploadMiddleware.array('media', 3), async (req, re
       address,
       locationSource = 'user-supplied',
       ward = 'Mathura Central',
+      imageMetadata = null,
     } = req.body || {};
 
     if (!title || String(title).trim().length < 5) {
@@ -74,6 +143,7 @@ router.post('/', requireAuth, uploadMiddleware.array('media', 3), async (req, re
 
     const userCategory = ISSUE_CATEGORIES.includes(category) ? category : 'Other civic issues';
     const firstImage = (req.files || []).find((f) => f.mimetype.startsWith('image/'));
+    const parsedMeta = parseMetadataField(imageMetadata);
 
     const aiResult = await analyzeCivicIssue({
       title: String(title).trim(),
@@ -82,6 +152,7 @@ router.post('/', requireAuth, uploadMiddleware.array('media', 3), async (req, re
       address: String(address || 'Mathura Area').trim(),
       imagePath: firstImage?.path,
       imageMimeType: firstImage?.mimetype,
+      imageMetadata: parsedMeta,
     });
 
     const finalCategory = ISSUE_CATEGORIES.includes(userCategory) && category ? userCategory : aiResult.predictedCategory;

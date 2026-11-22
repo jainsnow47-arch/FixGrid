@@ -9,7 +9,7 @@ export function getAuthToken() {
 }
 
 export async function apiRequest(path, options = {}) {
-  const { method = 'GET', body, isFormData = false, headers = {} } = options;
+  const { method = 'GET', body, isFormData = false, headers = {}, signal } = options;
   const finalHeaders = { ...headers };
 
   if (authToken) {
@@ -23,6 +23,7 @@ export async function apiRequest(path, options = {}) {
     method,
     headers: finalHeaders,
     body: isFormData ? body : body ? JSON.stringify(body) : undefined,
+    signal,
   });
 
   const contentType = response.headers.get('content-type') || '';

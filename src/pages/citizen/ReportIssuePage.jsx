@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import {
@@ -6,13 +6,17 @@ import {
   Camera,
   CheckCircle2,
   Crosshair,
+  Image as ImageIcon,
   Link2,
+  Loader2,
   MapPin,
+  RotateCcw,
   Sparkles,
 } from 'lucide-react';
 import { apiRequest } from '../../services/api.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { ISSUE_CATEGORIES } from '../../utils/formatters.js';
+import { extractMediaMetadata } from '../../utils/imageMetadata.js';
 import { DashboardLayout } from '../../components/layout/DashboardLayout.jsx';
 import { CivicMap } from '../../components/maps/CivicMap.jsx';
 import { ComplaintDetailModal } from '../../components/complaints/ComplaintDetailModal.jsx';
@@ -28,22 +32,103 @@ export function ReportIssuePage() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('Pothole');
+  const [categoryLocked, setCategoryLocked] = useState(false);
+  const [autoApplyAi, setAutoApplyAi] = useState(true);
+
   const [position, setPosition] = useState({ lat: 27.4924, lng: 77.6737 });
   const [address, setAddress] = useState('Krishna Nagar Area, Mathura (Click map or capture GPS)');
   const [ward, setWard] = useState('Ward 14 (Krishna Nagar)');
   const [locationSource, setLocationSource] = useState('map-pin');
+
   const [files, setFiles] = useState([]);
   const [previewUrl, setPreviewUrl] = useState('');
+  const [imageMetadata, setImageMetadata] = useState(null);
+  const [extractingMeta, setExtractingMeta] = useState(false);
 
+  const [livePredicting, setLivePredicting] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [aiResult, setAiResult] = useState(null);
   const [duplicates, setDuplicates] = useState([]);
   const [inspectDupId, setInspectDupId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const abortRef = useRef(null);
+
   const step1Done = title.trim().length >= 5 && description.trim().length >= 15;
   const step2Done = Boolean(address.trim());
   const step3Done = Boolean(aiResult);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  // Real-time AI Suggestion Engine: triggers automatically as user types or attaches image metadata
+  useEffect(() => {
+    const combinedText = `${title} ${description}`.trim();
+    if (combinedText.length < 4 && !imageMetadata) {
+      setLivePredicting(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      if (abortRef.current) {
+        abortRef.current.abort();
+      }
+      const controller = new AbortController();
+      abortRef.current = controller;
+      setLivePredicting(true);
+
+      try {
+        const data = await apiRequest('/api/complaints/live-suggest', {
+          method: 'POST',
+          signal: controller.signal,
+          body: {
+            title,
+            description,
+            category: categoryLocked ? category : '',
+            address,
+            latitude: position.lat,
+            longitude: position.lng,
+            imageMetadata,
+          },
+        });
+
+        if (controller.signal.aborted) return;
+
+        setAiResult(data.analysis);
+        setDuplicates(data.duplicates || []);
+
+        if (
+          autoApplyAi &&
+          !categoryLocked &&
+          data.analysis?.predictedCategory &&
+          ISSUE_CATEGORIES.includes(data.analysis.predictedCategory)
+        ) {
+          setCategory(data.analysis.predictedCategory);
+        }
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          // Keep previous prediction intact on transient errors
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLivePredicting(false);
+        }
+      }
+    }, 420);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [title, description, address, position.lat, position.lng, imageMetadata, autoApplyAi, categoryLocked, category]);
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
   const reverseGeocode = async (lat, lng, sourceLabel) => {
     setPosition({ lat, lng });
@@ -74,20 +159,45 @@ export function ReportIssuePage() {
     );
   };
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const picked = Array.from(e.target.files || []);
     setFiles(picked);
+
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
+
     const img = picked.find((f) => f.type.startsWith('image/'));
     if (img) {
       setPreviewUrl(URL.createObjectURL(img));
     } else {
       setPreviewUrl('');
     }
+
+    const primaryFile = img || picked[0];
+    if (!primaryFile) {
+      setImageMetadata(null);
+      return;
+    }
+
+    setExtractingMeta(true);
+    try {
+      const meta = await extractMediaMetadata(primaryFile);
+      setImageMetadata(meta);
+    } finally {
+      setExtractingMeta(false);
+    }
+  };
+
+  const handleApplyPhotoGps = () => {
+    if (!imageMetadata?.exifGps) return;
+    reverseGeocode(imageMetadata.exifGps.lat, imageMetadata.exifGps.lng, 'photo-exif-gps');
+    showToast('Map pin updated to match the photo’s GPS metadata.', 'success');
   };
 
   const handleAnalyzeDraft = async () => {
-    if (description.trim().length < 10) {
-      showToast('Please write a short description (at least 10 characters) before running AI check.', 'error');
+    if (description.trim().length < 5 && !files[0] && !imageMetadata) {
+      showToast('Enter a short description or attach a photo before running a full scan.', 'error');
       return;
     }
     setAnalyzing(true);
@@ -95,10 +205,11 @@ export function ReportIssuePage() {
       const fd = new FormData();
       fd.append('title', title);
       fd.append('description', description);
-      fd.append('category', category);
+      fd.append('category', categoryLocked ? category : '');
       fd.append('address', address);
       fd.append('latitude', String(position.lat));
       fd.append('longitude', String(position.lng));
+      if (imageMetadata) fd.append('imageMetadata', JSON.stringify(imageMetadata));
       if (files[0]) fd.append('media', files[0]);
 
       const data = await apiRequest('/api/complaints/analyze-draft', {
@@ -109,10 +220,14 @@ export function ReportIssuePage() {
 
       setAiResult(data.analysis);
       setDuplicates(data.duplicates || []);
-      if (data.analysis?.predictedCategory && ISSUE_CATEGORIES.includes(data.analysis.predictedCategory)) {
+      if (
+        !categoryLocked &&
+        data.analysis?.predictedCategory &&
+        ISSUE_CATEGORIES.includes(data.analysis.predictedCategory)
+      ) {
         setCategory(data.analysis.predictedCategory);
       }
-      showToast('AI check finished. Review the suggestions on the right.', 'success');
+      showToast('Full photo & duplicate scan complete.', 'success');
     } catch (err) {
       showToast(err.message, 'error');
     } finally {
@@ -138,6 +253,7 @@ export function ReportIssuePage() {
       fd.append('address', address);
       fd.append('ward', ward);
       fd.append('locationSource', locationSource);
+      if (imageMetadata) fd.append('imageMetadata', JSON.stringify(imageMetadata));
       files.forEach((f) => fd.append('media', f));
 
       const res = await apiRequest('/api/complaints', {
@@ -155,10 +271,13 @@ export function ReportIssuePage() {
     }
   };
 
+  const confidencePct = aiResult?.confidence ? Math.round(aiResult.confidence * 100) : 0;
+  const categoryDiffersFromAi = Boolean(aiResult?.predictedCategory && aiResult.predictedCategory !== category);
+
   return (
     <DashboardLayout
       title="Report a Neighborhood Issue"
-      subtitle="Three quick steps: describe the problem, pin its location, and preview AI sorting"
+      subtitle="Live AI predicts category and priority as you type or attach a photo"
     >
       <div className="space-y-6">
         {/* Clean 3-Step Visual Progress Guide */}
@@ -166,7 +285,7 @@ export function ReportIssuePage() {
           {[
             { num: '01', label: 'Describe & Add Photo', done: step1Done },
             { num: '02', label: 'Pin Location on Map', done: step2Done },
-            { num: '03', label: 'Preview AI Check & Submit', done: step3Done },
+            { num: '03', label: 'Live AI Suggestion & Submit', done: step3Done },
           ].map((s) => (
             <StaggerItem key={s.num}>
               <div
@@ -190,9 +309,26 @@ export function ReportIssuePage() {
           {/* Left Form Column */}
           <div className="lg:col-span-7 space-y-5">
             <Card animate className="space-y-4">
-              <div>
-                <h2 className="font-display text-base font-bold text-[#245B45]">01. What is the problem?</h2>
-                <p className="text-xs text-[#55665F] mt-0.5">Give a clear headline and a few details so crews know what to bring.</p>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h2 className="font-display text-base font-bold text-[#245B45]">01. What is the problem?</h2>
+                  <p className="text-xs text-[#55665F] mt-0.5">
+                    As you type or upload a photo, FixGrid AI suggests category and priority in real time.
+                  </p>
+                </div>
+                <label className="inline-flex items-center gap-2 text-xs font-medium text-[#245B45] cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={autoApplyAi}
+                    onChange={(e) => {
+                      const next = e.target.checked;
+                      setAutoApplyAi(next);
+                      if (next) setCategoryLocked(false);
+                    }}
+                    className="rounded border-[#245B45]/30 text-[#245B45] focus:ring-[#245B45]"
+                  />
+                  <span>Auto-apply AI category</span>
+                </label>
               </div>
 
               <div>
@@ -221,10 +357,28 @@ export function ReportIssuePage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-[#24332D] mb-1">Category</label>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <label className="block text-xs font-semibold text-[#24332D]">Category</label>
+                    {categoryDiffersFromAi && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCategory(aiResult.predictedCategory);
+                          setCategoryLocked(false);
+                        }}
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#F07832] hover:underline cursor-pointer"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>Use AI: {aiResult.predictedCategory}</span>
+                      </button>
+                    )}
+                  </div>
                   <select
                     value={category}
-                    onChange={(e) => setCategory(e.target.value)}
+                    onChange={(e) => {
+                      setCategory(e.target.value);
+                      setCategoryLocked(true);
+                    }}
                     className="w-full rounded-lg border border-[#245B45]/20 bg-white px-3 py-2 text-sm"
                   >
                     {ISSUE_CATEGORIES.map((cat) => (
@@ -253,23 +407,110 @@ export function ReportIssuePage() {
                 </div>
               </div>
 
-              {previewUrl && (
-                <div className="relative rounded-xl overflow-hidden border border-[#245B45]/15">
-                  <img
-                    src={previewUrl}
-                    alt="Uploaded issue preview"
-                    className="h-48 w-full object-cover"
-                  />
-                </div>
-              )}
+              {/* Photo Preview & Extracted Image Metadata */}
+              <AnimatePresence>
+                {(previewUrl || imageMetadata || extractingMeta) && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.2, ease: FG_EASE }}
+                    className="rounded-xl border border-[#245B45]/15 bg-[#FAF8EE] overflow-hidden"
+                  >
+                    {previewUrl && (
+                      <img
+                        src={previewUrl}
+                        alt="Uploaded issue preview"
+                        className="h-48 w-full object-cover border-b border-[#245B45]/10"
+                      />
+                    )}
+                    {imageMetadata && (
+                      <div className="p-3 space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                          <span className="font-semibold text-[#245B45] inline-flex items-center gap-1.5 min-w-0">
+                            <ImageIcon className="w-3.5 h-3.5 text-[#F07832] shrink-0" />
+                            <span className="truncate">{imageMetadata.fileName}</span>
+                          </span>
+                          <span className="text-[11px] font-mono-tabular text-[#55665F]">
+                            {[
+                              imageMetadata.resolutionLabel,
+                              imageMetadata.sizeLabel,
+                              imageMetadata.recencyLabel,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#55665F]">
+                          <span>
+                            {imageMetadata.cameraLabel ? `Device: ${imageMetadata.cameraLabel}` : `Format: ${imageMetadata.mimeType}`}
+                            {imageMetadata.filenameHints?.length > 0 && (
+                              <> · Clues: <strong className="text-[#24332D]">{imageMetadata.filenameHints.slice(0, 4).join(', ')}</strong></>
+                            )}
+                          </span>
+
+                          {imageMetadata.hasExifGps && (
+                            <button
+                              type="button"
+                              onClick={handleApplyPhotoGps}
+                              className="inline-flex items-center gap-1 font-semibold text-[#245B45] hover:text-[#F07832] cursor-pointer"
+                            >
+                              <MapPin className="w-3 h-3" />
+                              <span>Apply Photo GPS Pin</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Inline Real-Time Prediction Strip */}
+              <AnimatePresence>
+                {(livePredicting || aiResult) && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2, ease: FG_EASE }}
+                    className="rounded-xl bg-[#D5EBDD]/40 border border-[#245B45]/18 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      {livePredicting ? (
+                        <Loader2 className="w-4 h-4 text-[#F07832] animate-spin shrink-0" />
+                      ) : (
+                        <Sparkles className="w-4 h-4 text-[#F07832] shrink-0" />
+                      )}
+                      <span className="text-[#24332D]">
+                        {livePredicting ? (
+                          'Updating category & priority prediction...'
+                        ) : (
+                          <>
+                            Live Prediction: <strong className="text-[#245B45]">{aiResult?.predictedCategory}</strong>
+                            {confidencePct > 0 && <span className="text-[#55665F]"> ({confidencePct}% confidence)</span>}
+                          </>
+                        )}
+                      </span>
+                    </div>
+                    {aiResult?.recommendedSeverity && (
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[11px] text-[#55665F]">Priority:</span>
+                        <SeverityTag severity={aiResult.recommendedSeverity} />
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               <div className="pt-2 flex flex-wrap items-center justify-between gap-3 border-t border-[#245B45]/10">
                 <Button type="button" variant="secondary" onClick={handleAnalyzeDraft} disabled={analyzing}>
                   <Sparkles className="w-4 h-4" />
-                  <span>{analyzing ? 'Checking with AI...' : 'Preview AI Triage & Duplicates'}</span>
+                  <span>{analyzing ? 'Scanning Photo & Duplicates...' : 'Run Full Photo & Duplicate Scan'}</span>
                 </Button>
                 <span className="text-xs text-[#55665F]">
-                  Optional preview · Officials verify all routing.
+                  Live predictions update automatically · Officials confirm final routing.
                 </span>
               </div>
             </Card>
@@ -327,14 +568,20 @@ export function ReportIssuePage() {
             </Card>
           </div>
 
-          {/* Right AI Preview & Submit Column */}
+          {/* Right Live AI Prediction & Submit Column */}
           <div className="lg:col-span-5 space-y-5 lg:sticky lg:top-24">
             <Card animate delay={0.08} className="space-y-3 bg-[#FAF8EE]">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <h2 className="font-display text-base font-bold text-[#245B45] flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-[#F07832]" />
-                  <span>03. AI Check Preview</span>
+                  <span>03. Live AI Suggestion</span>
                 </h2>
+                {livePredicting && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#F07832]">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <span>Updating...</span>
+                  </span>
+                )}
               </div>
 
               <AnimatePresence mode="wait">
@@ -347,10 +594,10 @@ export function ReportIssuePage() {
                     className="text-xs text-[#55665F] leading-relaxed space-y-2"
                   >
                     <p>
-                      Click <strong>Preview AI Triage & Duplicates</strong> to see which department and priority level FixGrid AI recommends, plus any similar nearby reports.
+                      Start typing your headline or details, or attach an image. FixGrid AI immediately predicts the best issue category, priority level, and municipal department.
                     </p>
                     <p className="text-[11px]">
-                      You can also submit right away—AI triage runs automatically upon submission.
+                      Image resolution, capture time, EXIF GPS, and filename details are evaluated locally before submission.
                     </p>
                   </motion.div>
                 ) : (
@@ -362,29 +609,65 @@ export function ReportIssuePage() {
                     className="space-y-3 text-xs"
                   >
                     <div className="flex items-center justify-between py-1.5 border-b border-[#245B45]/10">
-                      <span className="text-[#55665F]">Analysis Engine</span>
-                      <span className="font-semibold text-[#245B45]">
-                        {aiResult.isFallback ? 'Smart Rule-Based Check' : `Gemini (${aiResult.provider})`}
-                      </span>
+                      <span className="text-[#55665F]">Predicted Category</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-[#24332D]">{aiResult.predictedCategory}</span>
+                        {categoryDiffersFromAi && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCategory(aiResult.predictedCategory);
+                              setCategoryLocked(false);
+                            }}
+                            className="text-[11px] font-semibold text-[#F07832] hover:underline cursor-pointer"
+                          >
+                            Apply
+                          </button>
+                        )}
+                      </div>
                     </div>
+
                     <div className="flex items-center justify-between py-1.5 border-b border-[#245B45]/10">
-                      <span className="text-[#55665F]">Suggested Category</span>
-                      <span className="font-semibold text-[#24332D]">{aiResult.predictedCategory}</span>
-                    </div>
-                    <div className="flex items-center justify-between py-1.5 border-b border-[#245B45]/10">
-                      <span className="text-[#55665F]">Urgency Level</span>
+                      <span className="text-[#55665F]">Predicted Priority</span>
                       <SeverityTag severity={aiResult.recommendedSeverity} />
                     </div>
+
+                    <div className="py-1.5 border-b border-[#245B45]/10 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[#55665F]">Prediction Confidence</span>
+                        <span className="font-mono-tabular font-semibold text-[#245B45]">{confidencePct}%</span>
+                      </div>
+                      <div className="h-1.5 w-full rounded-full bg-[#E8E4CE] overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${confidencePct}%` }}
+                          transition={{ duration: 0.45, ease: FG_EASE }}
+                          className="h-full rounded-full bg-[#245B45]"
+                        />
+                      </div>
+                    </div>
+
                     <div className="py-1.5 border-b border-[#245B45]/10">
-                      <span className="text-[#55665F] block mb-0.5">Recommended Department</span>
+                      <span className="text-[#55665F] block mb-0.5">Suggested Department</span>
                       <span className="font-semibold text-[#245B45]">{aiResult.suggestedDepartmentName}</span>
                     </div>
-                    <div>
-                      <span className="text-[#55665F] block mb-0.5">Summary</span>
-                      <p className="text-[#24332D] leading-snug">{aiResult.summary}</p>
-                    </div>
+
+                    {Array.isArray(aiResult.signals) && aiResult.signals.length > 0 && (
+                      <div className="py-1.5 border-b border-[#245B45]/10">
+                        <span className="text-[#55665F] block mb-1">Signals Used</span>
+                        <p className="text-[#24332D] leading-snug">{aiResult.signals.join(' · ')}</p>
+                      </div>
+                    )}
+
+                    {aiResult.priorityReason && (
+                      <div>
+                        <span className="text-[#55665F] block mb-0.5">Priority Rationale</span>
+                        <p className="text-[#24332D] leading-snug">{aiResult.priorityReason}</p>
+                      </div>
+                    )}
+
                     <div className="rounded-lg bg-[#DCEBF3]/60 p-3">
-                      <span className="font-semibold text-[#245B45] block mb-1">Reasoning</span>
+                      <span className="font-semibold text-[#245B45] block mb-1">Why AI suggested this</span>
                       <p className="text-[#24332D] leading-relaxed">{aiResult.explanation}</p>
                     </div>
                   </motion.div>

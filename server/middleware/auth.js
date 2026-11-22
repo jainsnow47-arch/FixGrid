@@ -69,7 +69,7 @@ export function requireRole(...allowedRoles) {
 const rateBuckets = new Map();
 export function rateLimit({ windowMs = 60000, max = 40 } = {}) {
   return (req, res, next) => {
-    const key = `${req.ip || 'local'}:${req.baseUrl}`;
+    const key = `${req.ip || 'local'}:${req.baseUrl}${req.path}`;
     const now = Date.now();
     const bucket = rateBuckets.get(key) || { count: 0, resetAt: now + windowMs };
     if (now > bucket.resetAt) {
