@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { AuthProvider } from './context/AuthContext.jsx';
@@ -51,6 +51,47 @@ const DASHBOARD_PREFIXES = ['/citizen/', '/government/', '/student/', '/faculty/
 function getShellKey(pathname) {
   return DASHBOARD_PREFIXES.some((prefix) => pathname.startsWith(prefix)) ? 'dashboard-shell' : pathname;
 }
+
+function getRouteRank(pathname) {
+  if (pathname === '/') return 0;
+  if (pathname === '/community') return 1;
+  if (pathname === '/challenges') return 2;
+  if (pathname === '/auth') return 3;
+  if (DASHBOARD_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return 4;
+  return 1;
+}
+
+const SLIDE_PAGE_VARIANTS = {
+  initial: (dir) => ({
+    opacity: 0,
+    x: dir >= 0 ? 48 : -48,
+  }),
+  animate: {
+    opacity: 1,
+    x: 0,
+    transition: {
+      x: { duration: 0.28, ease: FG_EASE },
+      opacity: { duration: 0.22, ease: 'easeOut' },
+    },
+    transitionEnd: {
+      transform: 'none',
+    },
+  },
+  exit: (dir) => ({
+    opacity: 0,
+    x: dir >= 0 ? -48 : 48,
+    transition: {
+      x: { duration: 0.22, ease: FG_EASE },
+      opacity: { duration: 0.16, ease: 'easeIn' },
+    },
+  }),
+};
+
+const REDUCED_PAGE_VARIANTS = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1, transition: { duration: 0.12 } },
+  exit: { opacity: 0, transition: { duration: 0.1 } },
+};
 
 function RouteLayer({ layerKey }) {
   const liveLocation = useLocation();
@@ -119,6 +160,15 @@ function AnimatedAppRoutes() {
   const location = useLocation();
   const reduced = useReducedMotion();
   const shellKey = getShellKey(location.pathname);
+  const nextRank = getRouteRank(location.pathname);
+  const navTrackerRef = useRef({ key: shellKey, rank: nextRank, direction: 1 });
+
+  if (navTrackerRef.current.key !== shellKey) {
+    const direction = nextRank >= navTrackerRef.current.rank ? 1 : -1;
+    navTrackerRef.current = { key: shellKey, rank: nextRank, direction };
+  }
+
+  const direction = navTrackerRef.current.direction;
 
   useEffect(() => {
     if (shellKey !== 'dashboard-shell') {
@@ -127,17 +177,21 @@ function AnimatedAppRoutes() {
   }, [shellKey]);
 
   return (
-    <AnimatePresence mode="wait" initial={false}>
-      <motion.div
-        key={shellKey}
-        initial={reduced ? false : { opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={reduced ? undefined : { opacity: 0 }}
-        transition={{ duration: 0.18, ease: FG_EASE }}
-      >
-        <RouteLayer layerKey={shellKey} />
-      </motion.div>
-    </AnimatePresence>
+    <div className="min-h-screen overflow-x-clip bg-[#F5F1DC]">
+      <AnimatePresence mode="wait" initial={false} custom={direction}>
+        <motion.div
+          key={shellKey}
+          custom={direction}
+          variants={reduced ? REDUCED_PAGE_VARIANTS : SLIDE_PAGE_VARIANTS}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="min-h-screen"
+        >
+          <RouteLayer layerKey={shellKey} />
+        </motion.div>
+      </AnimatePresence>
+    </div>
   );
 }
 

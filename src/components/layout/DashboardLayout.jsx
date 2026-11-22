@@ -83,6 +83,38 @@ function FrozenOutlet({ pathname }) {
   return livePathname === pathname ? currentOutlet : captured;
 }
 
+const DASHBOARD_SLIDE_VARIANTS = {
+  initial: (dir) => ({
+    opacity: 0,
+    x: dir >= 0 ? 28 : -28,
+  }),
+  animate: {
+    opacity: 1,
+    x: 0,
+    transition: {
+      x: { duration: 0.24, ease: FG_EASE },
+      opacity: { duration: 0.18, ease: 'easeOut' },
+    },
+    transitionEnd: {
+      transform: 'none',
+    },
+  },
+  exit: (dir) => ({
+    opacity: 0,
+    x: dir >= 0 ? -28 : 28,
+    transition: {
+      x: { duration: 0.18, ease: FG_EASE },
+      opacity: { duration: 0.14, ease: 'easeIn' },
+    },
+  }),
+};
+
+const DASHBOARD_REDUCED_VARIANTS = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1, transition: { duration: 0.12 } },
+  exit: { opacity: 0, transition: { duration: 0.1 } },
+};
+
 function DashboardSidebar({ user, navItems, onCloseMobile, onSwitchRole, onLogout }) {
   return (
     <div className="flex flex-col h-full bg-[#1A4332] text-[#F5F1DC]">
@@ -358,6 +390,16 @@ export function DashboardShell() {
   );
 
   const navItems = ROLE_NAV[user?.role] || ROLE_NAV.citizen;
+  const navIndex = navItems.findIndex((item) => item.to === location.pathname);
+  const currentRank = navIndex >= 0 ? navIndex : 0;
+  const viewTrackerRef = useRef({ pathname: location.pathname, rank: currentRank, direction: 1 });
+
+  if (viewTrackerRef.current.pathname !== location.pathname) {
+    const direction = currentRank >= viewTrackerRef.current.rank ? 1 : -1;
+    viewTrackerRef.current = { pathname: location.pathname, rank: currentRank, direction };
+  }
+
+  const slideDirection = viewTrackerRef.current.direction;
 
   const handleLogout = () => {
     logout();
@@ -424,14 +466,15 @@ export function DashboardShell() {
             onOpenSidebar={() => setSidebarOpen(true)}
           />
 
-          <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
-            <AnimatePresence mode="wait" initial={false}>
+          <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto overflow-x-clip">
+            <AnimatePresence mode="wait" initial={false} custom={slideDirection}>
               <motion.div
                 key={location.pathname}
-                initial={reduced ? false : { opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={reduced ? undefined : { opacity: 0, y: -8 }}
-                transition={{ duration: 0.2, ease: FG_EASE }}
+                custom={slideDirection}
+                variants={reduced ? DASHBOARD_REDUCED_VARIANTS : DASHBOARD_SLIDE_VARIANTS}
+                initial="initial"
+                animate="animate"
+                exit="exit"
               >
                 <FrozenOutlet pathname={location.pathname} />
               </motion.div>
