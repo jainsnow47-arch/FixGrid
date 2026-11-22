@@ -1,0 +1,1170 @@
+# MASTER BUILD PROMPT — FIXGRID AI
+## Build a complete, animated, production-minded civic technology and community innovation platform
+
+Act as a senior full-stack engineer, UI/UX designer, product architect, AI engineer, database designer and security engineer.
+
+Your task is to BUILD a complete, responsive, visually exceptional web application called **FIXGRID AI**.
+
+This is a Hack4Tech project selected with a score of 9.8/10 in the PPT screening round. We are aiming to build a first-place-quality working product.
+
+I have attached my final project presentation PDF, `fixGrid_AI final.pdf`.
+
+**READ THE ENTIRE PRESENTATION BEFORE BUILDING.** Treat it as the primary product specification. Every feature, workflow, stakeholder, technical component, risk mitigation and planned MVP item in the presentation must be represented in the application.
+
+Do not build only a landing page or static dashboard. Build an integrated application with real navigation, working forms, functional interactions, meaningful data, role-based experiences and a connected end-to-end workflow.
+
+---
+
+# PART 1 — PRODUCT IDENTITY
+
+**Product:** FixGrid AI
+
+**Tagline:** Connecting Communities. Empowering Innovators. Creating Impact.
+
+**Secondary tagline:** Report. Resolve. Innovate.
+
+**Official problem statement:** CivicPulse AI – Intelligent Civic Issue Management System.
+
+**Category:** Web Development — PS-3.
+
+**Team:** Kasukabe Defence Group.
+
+## Product vision
+
+FixGrid AI is an AI-powered civic issue management and community innovation ecosystem.
+
+It connects citizens who report civic issues, government officials who manage and resolve complaints, and students, universities and industry partners who can contribute innovative solutions to validated civic challenges.
+
+It is NOT merely a complaint registration portal.
+
+It has two connected but separate workflows:
+
+1. Official civic issue management and government resolution.
+2. Community innovation and student project development.
+
+The platform must clearly preserve the distinction between these workflows.
+
+Student teams do not replace municipal repair or government service teams. Government officials retain authority over official complaints, challenge approval and public-sector pilots.
+
+---
+
+# PART 2 — COMPLETE FEATURES FROM MY FINAL PRESENTATION
+
+Every item in this section must be included in the application.
+
+## A. Citizen reporting
+
+Create a citizen portal where users can:
+
+- Register and sign in.
+- Select their role.
+- Submit civic complaints.
+- Upload issue photographs.
+- Optionally upload videos where supported.
+- Capture GPS coordinates.
+- Select a location on an interactive map.
+- Correct location manually.
+- Add a complaint description.
+- Select or confirm an issue category.
+- View submitted complaints.
+- Receive a unique complaint ID.
+- Track complaint status.
+- View department assignment.
+- Receive status notifications.
+- Support or upvote community complaints.
+- Submit feedback after resolution.
+
+Support civic issue categories:
+
+- Pothole.
+- Damaged road.
+- Garbage accumulation.
+- Water leakage.
+- Drainage problem.
+- Broken streetlight.
+- Waterlogging.
+- Damaged public infrastructure.
+- Other civic issues.
+
+The reporting process must be simple and mobile-friendly.
+
+## B. AI civic intelligence
+
+Implement an AI-assisted analysis pipeline.
+
+When a citizen submits an issue, the platform should:
+
+1. Analyse the complaint description and uploaded image where image analysis is available.
+2. Identify the likely civic issue category.
+3. Generate a short issue summary.
+4. Recommend a severity level.
+5. Extract relevant keywords.
+6. Identify similar existing complaints.
+7. Suggest the responsible department using issue type and location.
+8. Explain why the system generated its recommendations.
+
+Severity levels:
+
+- Critical.
+- High.
+- Medium.
+- Low.
+
+Use a transparent severity explanation.
+
+For example:
+- A large road obstruction may receive a higher severity recommendation.
+- A minor damaged pavement may receive a lower recommendation.
+- An exposed electrical hazard may require urgent review.
+
+These are illustrative rules, not automatic final safety decisions.
+
+**Human validation is mandatory.** AI recommendations must be reviewable and correctable by authorised officials.
+
+If the AI service is unavailable, provide a clear fallback to manual category selection and rule-based recommendations.
+
+Do not show fake AI analysis as though it came from a real model.
+
+## C. Duplicate complaint detection
+
+Implement duplicate detection.
+
+Compare new complaints with existing complaints using:
+
+- Semantic similarity of descriptions.
+- Issue category.
+- Geographic proximity.
+- Location.
+- Time window.
+
+If a possible duplicate is found:
+
+- Show a possible duplicate warning.
+- Display related complaint IDs.
+- Allow the citizen to view the related issue.
+- Allow authorised officials to confirm or reject the duplicate relationship.
+
+Important:
+
+Never delete original complaints automatically.
+
+Similar complaints must be linked or grouped while preserving each citizen's original report, history and tracking information.
+
+Use embeddings and pgvector if feasible. If unavailable, create a transparent fallback using text similarity, category and geographic distance.
+
+## D. Community feed
+
+Build a community feed displaying civic issues.
+
+Include:
+
+- Issue photo.
+- Issue title.
+- Category.
+- Location.
+- Severity.
+- Current status.
+- Report date.
+- Upvote/support count.
+- Comments or citizen feedback.
+- View details.
+- Filter by issue category.
+- Filter by location.
+- Filter by status.
+- Search complaints.
+
+Users should be able to support an issue.
+
+Prevent repeated upvotes from the same account where possible.
+
+## E. Severity and department assignment
+
+Implement department routing using:
+
+- AI classification.
+- Complaint category.
+- GPS coordinates.
+- Administrative jurisdiction.
+- Configurable department mapping.
+
+Example configurable departments:
+
+- Municipal road and engineering department.
+- Sanitation department.
+- Water supply department.
+- Drainage department.
+- Electrical/streetlight department.
+
+These are demo configurations, not claims of live government integration.
+
+The system should automatically route complaints to the relevant configured department.
+
+Authorised officials must be able to review and correct assignments.
+
+## F. SLA escalation
+
+Implement configurable SLA rules.
+
+Example:
+- Critical: urgent review.
+- High: shorter response target.
+- Medium: normal response target.
+- Low: standard response target.
+
+Allow administrators to configure SLA durations.
+
+Show:
+- Time remaining.
+- Overdue status.
+- Escalation history.
+- Assigned department.
+- Assigned official.
+- Escalation level.
+
+When a complaint becomes overdue, trigger the configured escalation workflow.
+
+Use demo escalation rules unless a real integration is available.
+
+## G. Interactive maps and heatmaps
+
+Use Leaflet and OpenStreetMap.
+
+Create:
+
+- Interactive issue map.
+- Complaint markers.
+- Category-based marker colours.
+- Severity indicators.
+- Location-based filters.
+- Map popups.
+- Complaint clusters.
+- Heatmap or hotspot visualisation.
+- City/area-level issue statistics.
+
+Allow users to switch between map and list views.
+
+Use sample Mathura-area data for demonstration, but clearly label demo records.
+
+Do not invent exact government boundaries or official department mappings.
+
+Use OpenStreetMap reverse geocoding where properly configured, and provide manual correction.
+
+## H. Transparent complaint tracking
+
+Every complaint must have:
+
+- Unique complaint ID.
+- Submission date.
+- Category.
+- Location.
+- Severity recommendation.
+- Assigned department.
+- Assigned official or role.
+- Status.
+- Timeline.
+- Status change history.
+- Resolution evidence where applicable.
+- Citizen feedback.
+
+Statuses:
+
+1. Submitted.
+2. AI analysis completed.
+3. Awaiting official validation.
+4. Assigned.
+5. In progress.
+6. Escalated.
+7. Resolved.
+8. Reopened, if permitted.
+
+Show an attractive timeline with clear progress states.
+
+## I. Student Contribution Passport
+
+Implement the Student Contribution Passport.
+
+It is a verified platform record of:
+
+- Project participation.
+- Student responsibilities.
+- Skills demonstrated.
+- Tasks completed.
+- Deliverables.
+- Milestones.
+- Mentor feedback.
+- Verified outcomes.
+
+Students should have a portfolio-style profile showing their contribution history.
+
+Faculty mentors or authorised project reviewers should be able to verify contributions.
+
+Do not describe it as an official government credential.
+
+---
+
+# PART 3 — ADDITIONAL COMMUNITY INNOVATION ECOSYSTEM
+
+This is one of the most important differentiators of FixGrid AI.
+
+Build this as a fully connected second pillar.
+
+## A. Complaint-to-challenge conversion
+
+Suitable civic complaints can be converted into structured innovation challenges.
+
+Only authorised government officials can approve this conversion.
+
+Challenge creation should include:
+
+- Challenge title.
+- Description.
+- Problem category.
+- Location.
+- Background.
+- Expected outcome.
+- Skills required.
+- Suggested deliverables.
+- Deadline.
+- Difficulty.
+- Relevant department.
+- Approval status.
+
+Show a clear relationship between the original complaint and the resulting challenge.
+
+Keep official complaint resolution and student project progress separate.
+
+A student prototype does not mark the official complaint as resolved.
+
+## B. Student dashboard
+
+Create a dedicated student experience.
+
+Include:
+
+- Personal profile.
+- Academic details.
+- Skills.
+- Areas of interest.
+- Experience.
+- Availability.
+- Project portfolio.
+- Recommended challenges.
+- Saved challenges.
+- Applied challenges.
+- Team invitations.
+- Active projects.
+- Task deadlines.
+- Milestone progress.
+- Faculty feedback.
+- Student Contribution Passport.
+
+Students should be able to discover and apply to suitable challenges.
+
+## C. Explainable skill-based matching
+
+Create a matching engine.
+
+Use these proposed factors as initial configurable weights:
+
+- Skills match: 35%.
+- Domain knowledge: 25%.
+- Prior experience: 15%.
+- Availability: 15%.
+- Geographic or institutional proximity: 10%.
+
+These are initial design assumptions and must remain configurable.
+
+For each recommendation show:
+
+- Overall match percentage.
+- Matched skills.
+- Missing skills.
+- Relevant experience.
+- Availability compatibility.
+- Explanation for the recommendation.
+
+Do not show random percentages. Calculate the score from actual profile and challenge data.
+
+## D. Team formation
+
+Students should be able to:
+
+- Apply individually.
+- Apply with an existing team.
+- Invite teammates.
+- Accept or reject invitations.
+- Form multidisciplinary teams.
+- View team member skills.
+- Assign project roles.
+- Manage team members.
+
+Prevent duplicate applications and conflicting team membership where appropriate.
+
+## E. Project workspace
+
+Create a project workspace for approved student teams.
+
+Include:
+
+- Project overview.
+- Team members.
+- Project objectives.
+- Task board.
+- Milestones.
+- Deadlines.
+- Deliverables.
+- File submissions.
+- Progress updates.
+- Faculty comments.
+- Review status.
+
+Use a clean Kanban-style task board.
+
+## F. Faculty mentor dashboard
+
+Faculty should be able to:
+
+- Create and manage mentor profiles.
+- View relevant student challenges.
+- Review team applications.
+- Accept mentorship requests.
+- View project progress.
+- Comment on deliverables.
+- Evaluate milestones.
+- Verify student contributions.
+
+## G. Industry and CSR dashboard
+
+Industry/CSR partners should be able to:
+
+- Create partner profiles.
+- Browse approved challenges.
+- Discover student teams.
+- Offer mentorship.
+- Offer technical resources.
+- Express interest in supporting projects.
+- View proposals and milestones where authorised.
+- Support potential pilots.
+
+Require consent before exposing student profile details.
+
+Do not claim actual corporate partnerships or sponsorships.
+
+## H. Government dashboard
+
+Government officials should be able to:
+
+- View complaints.
+- Validate reports.
+- Correct AI classification.
+- Correct severity.
+- Review jurisdiction.
+- Assign departments.
+- Update complaint status.
+- Configure escalation rules.
+- View issue heatmaps.
+- Review challenge conversion requests.
+- Approve or reject challenges.
+- Review student proposals.
+- Approve potential public-sector pilots.
+
+Government decisions must be auditable.
+
+## I. Platform administrator dashboard
+
+The platform administrator should be able to:
+
+- Manage users.
+- Manage roles.
+- Manage departments.
+- Manage issue categories.
+- Configure SLAs.
+- Moderate inappropriate content.
+- Verify institutions and partners.
+- View audit logs.
+- Monitor platform activity.
+
+Use strict role permissions.
+
+---
+
+# PART 4 — USER ROLES AND DASHBOARDS
+
+Create six distinct role experiences:
+
+1. Citizen.
+2. Government Official.
+3. Student.
+4. Faculty Mentor.
+5. Industry / CSR Partner.
+6. Platform Administrator.
+
+Each role should have a different navigation structure, dashboard, data access and actions.
+
+Do not simply show the same dashboard with different headings.
+
+Create role-specific routes and permissions.
+
+Example route structure:
+
+/citizen/dashboard
+/citizen/report
+/citizen/my-complaints
+/citizen/community
+
+/government/dashboard
+/government/complaints
+/government/departments
+/government/heatmap
+/government/challenges
+
+/student/dashboard
+/student/challenges
+/student/teams
+/student/projects
+/student/passport
+/student/profile
+
+/faculty/dashboard
+/faculty/mentorship
+/faculty/reviews
+/faculty/projects
+
+/industry/dashboard
+/industry/challenges
+/industry/teams
+/industry/partnerships
+
+/admin/dashboard
+/admin/users
+/admin/departments
+/admin/categories
+/admin/settings
+/admin/audit-logs
+
+Create protected routes.
+
+A user must not be able to access another role's private dashboard by manually changing the URL.
+
+---
+
+# PART 5 — DESIGN AND USER EXPERIENCE
+
+THIS IS EXTREMELY IMPORTANT.
+
+I want an impressive, modern, polished, animated application.
+
+It should look like a real funded civic-tech product, not a generic student project or a basic admin template.
+
+Use the visual identity of my final presentation as inspiration.
+
+## Visual direction
+
+Primary style:
+- Warm ivory / cream background.
+- Mint and sage green.
+- Orange as the main accent.
+- Deep forest green for important text.
+- Soft pastel supporting colours.
+- Clean typography.
+- Editorial visual hierarchy.
+- Rounded but not excessively rounded components.
+- Elegant shadows.
+- Spacious layouts.
+- Clear data visualisations.
+
+Suggested palette:
+
+- Ivory: #F5F1DC
+- Mint: #D5EBDD
+- Sage: #7DBE9E
+- Forest: #245B45
+- Orange: #F07832
+- Dark text: #24332D
+- Soft pink: #F3D7DD
+- Light blue: #DCEBF3
+
+Use these as starting points and adjust them for accessibility and contrast.
+
+## Landing page
+
+Build a beautiful public landing page.
+
+Include:
+
+1. Animated navigation bar.
+2. Hero section with FixGrid AI branding.
+3. Strong heading explaining the civic problem-solving mission.
+4. Primary CTA: Report an Issue.
+5. Secondary CTA: Explore Challenges.
+6. Animated city/map visualisation.
+7. How it works section.
+8. Two-pillar explanation.
+9. Four mandatory PS features.
+10. Stakeholder ecosystem.
+11. Live demo statistics using clearly labelled sample data.
+12. Call-to-action section.
+13. Footer.
+
+Do not use fake customer testimonials or fake partner logos.
+
+## Dashboard design
+
+Each dashboard should have:
+
+- Sidebar navigation.
+- Top navigation.
+- Profile menu.
+- Notifications.
+- Search where relevant.
+- Main KPI section.
+- Useful charts.
+- Recent activity.
+- Clear primary action.
+- Responsive mobile navigation.
+
+Make each role visually coherent but give it relevant functionality.
+
+## Animation requirements
+
+Use Framer Motion or an equivalent supported animation library.
+
+Implement:
+
+- Smooth page transitions.
+- Sidebar transitions.
+- Animated counters.
+- Staggered card entrances.
+- Hover interactions.
+- Smooth modal transitions.
+- Animated complaint progress timelines.
+- Map marker pulse effects.
+- Animated charts where appropriate.
+- Loading skeletons.
+- Toast notifications.
+- Smooth dropdowns.
+- Animated challenge matching scores.
+- Task board interactions.
+- Subtle background motion.
+
+Animations must be smooth and purposeful.
+
+Avoid:
+- Excessive bouncing.
+- Constant motion.
+- Distracting background animations.
+- Long animation delays.
+- Heavy effects that slow the app.
+
+Respect prefers-reduced-motion.
+
+---
+
+# PART 6 — TECHNICAL ARCHITECTURE
+
+Use a clean, maintainable full-stack architecture.
+
+Preferred stack from our project plan:
+
+## Frontend
+
+- React.
+- TypeScript.
+- Vite.
+- Tailwind CSS.
+- Framer Motion.
+- Lucide React.
+- React Router.
+- TanStack Query or an equivalent data-fetching solution.
+- Recharts.
+- Leaflet.
+- OpenStreetMap.
+
+## Backend
+
+- Node.js.
+- Express.js.
+- TypeScript where practical.
+- REST APIs.
+- Modular service structure.
+
+## Database
+
+- PostgreSQL.
+- Prisma ORM.
+- pgvector where feasible for embeddings and semantic similarity.
+
+## AI
+
+- Gemini API.
+- Image and text analysis.
+- Issue classification.
+- Severity recommendations.
+- Complaint summarisation.
+- Duplicate detection.
+- Semantic similarity.
+- Skill matching explanations.
+
+## Media
+
+- Cloudinary or S3-compatible storage.
+
+## Authentication
+
+- Secure authentication.
+- JWT or secure session-based authentication.
+- Role-Based Access Control.
+- Protected routes.
+- Password hashing.
+- Input validation.
+
+Do not expose secrets in frontend source code.
+
+Do not hardcode API keys.
+
+Use environment variables.
+
+If Google AI Studio supports a different native backend or deployment workflow, adapt the implementation while preserving the architecture's responsibilities and data model. Explain any deviation.
+
+---
+
+# PART 7 — DATABASE DESIGN
+
+Design a proper relational schema.
+
+Include entities such as:
+
+- User.
+- UserProfile.
+- Role.
+- Department.
+- Institution.
+- FacultyProfile.
+- IndustryPartner.
+- Complaint.
+- ComplaintMedia.
+- ComplaintStatusHistory.
+- ComplaintDuplicateLink.
+- ComplaintVote.
+- ComplaintComment.
+- Location.
+- AIAnalysis.
+- SeverityAssessment.
+- DepartmentAssignment.
+- SLAConfiguration.
+- EscalationHistory.
+- CivicChallenge.
+- ChallengeApplication.
+- StudentSkill.
+- ChallengeSkill.
+- Team.
+- TeamMember.
+- TeamInvitation.
+- Project.
+- ProjectTask.
+- ProjectMilestone.
+- Deliverable.
+- MentorAssignment.
+- MentorFeedback.
+- ContributionRecord.
+- Notification.
+- AuditLog.
+
+Use proper relationships, indexes and timestamps.
+
+Preserve the original complaint even if it is linked to duplicates.
+
+Use soft deletion where appropriate for records that need audit history.
+
+---
+
+# PART 8 — SECURITY, PRIVACY AND TRUST
+
+Security must be considered from the beginning.
+
+Implement:
+
+- Role-based permissions.
+- Server-side validation.
+- Password hashing.
+- Secure environment variables.
+- Upload validation.
+- File size limits.
+- Allowed MIME types.
+- Rate limiting where practical.
+- Safe error handling.
+- Audit logs for official actions.
+- Consent-based student profile sharing.
+- Data minimisation.
+- Protection against unauthorised record access.
+
+Do not implement facial recognition as a mandatory feature.
+
+Do not expose citizen phone numbers, email addresses or sensitive profile data publicly.
+
+Do not allow ordinary users to modify official complaint assignments or government decisions.
+
+---
+
+# PART 9 — DATA, DEMO MODE AND REAL INTEGRATIONS
+
+The application must be demonstrable even if external credentials are unavailable.
+
+Create realistic seeded sample data for:
+
+- Civic complaints.
+- Departments.
+- Citizens.
+- Government officials.
+- Students.
+- Faculty.
+- Industry partners.
+- Challenges.
+- Teams.
+- Projects.
+- Tasks.
+- Notifications.
+
+Use a Mathura-oriented demo dataset, but label sample records as demo data.
+
+Never present demo records as real complaints.
+
+Create demo accounts for each role with clearly documented credentials in a local development README only. Do not hardcode production passwords.
+
+Where real integrations require API keys:
+
+- Create a clear configuration interface.
+- Use environment variables.
+- Show an honest connection status.
+- Provide a fallback.
+- Never pretend a disconnected integration is working.
+
+## AI integration
+
+Use the Gemini API through a secure backend.
+
+Implement:
+- Issue classification.
+- Complaint summarisation.
+- Severity recommendation.
+- Image analysis where supported.
+- Explainable results.
+
+If no API key is configured, show a clearly labelled demo/fallback mode.
+
+## Maps
+
+Use Leaflet and OpenStreetMap.
+
+If reverse geocoding is unavailable, allow manual location entry and clearly label the location as user supplied.
+
+Do not claim access to live municipal databases.
+
+## Notifications
+
+Implement in-app notifications first.
+
+Real email, SMS or push notifications can be added through configured providers later.
+
+---
+
+# PART 10 — MVP PRIORITIES
+
+Do not try to implement every advanced feature before the core workflow works.
+
+Build in this order.
+
+## MVP 1 — Foundation
+
+- Project structure.
+- Navigation.
+- Authentication.
+- Six roles.
+- Protected routes.
+- Database schema.
+- Demo accounts.
+
+## MVP 2 — Civic reporting
+
+- Image upload.
+- GPS capture.
+- Manual location correction.
+- Complaint creation.
+- Unique ID.
+- AI classification.
+- Duplicate detection.
+- Severity recommendation.
+- Department mapping.
+- Complaint tracking.
+
+## MVP 3 — Government operations
+
+- Government dashboard.
+- Complaint validation.
+- Department assignment.
+- Status updates.
+- SLA timers.
+- Escalation.
+- Live issue map.
+- Heatmaps.
+
+## MVP 4 — Community engagement
+
+- Community feed.
+- Upvotes.
+- Feedback.
+- Filters.
+- Notifications.
+
+## MVP 5 — Student innovation
+
+- Complaint-to-challenge conversion.
+- Challenge discovery.
+- Student profiles.
+- Skill matching.
+- Applications.
+- Team formation.
+- Project workspace.
+- Tasks and milestones.
+- Faculty reviews.
+- Student Contribution Passport.
+
+## MVP 6 — Industry and administration
+
+- Industry/CSR dashboard.
+- Mentorship.
+- Partner interest.
+- Admin management.
+- Audit logs.
+
+## MVP 7 — Final polish
+
+- Animations.
+- Responsive design.
+- Accessibility.
+- Error states.
+- Loading states.
+- Empty states.
+- Validation.
+- End-to-end demo.
+
+---
+
+# PART 11 — IMPORTANT PRODUCT RULES
+
+These rules must never be violated:
+
+1. AI recommends; authorised humans validate.
+2. Original complaints are never deleted simply because they are duplicates.
+3. Automatic department assignment must be based on category and jurisdiction.
+4. Government officials can correct AI recommendations.
+5. Student innovation projects are separate from official complaint resolution.
+6. A student prototype does not automatically resolve a government complaint.
+7. Government approval is required for public-sector pilots.
+8. Student data sharing requires consent.
+9. Student Contribution Passport is a platform record, not a government-issued credential.
+10. Demo data must be clearly labelled.
+11. No fake government integration.
+12. No fabricated partnerships, statistics or achievements.
+13. No non-functional buttons.
+14. No placeholder pages presented as completed features.
+15. No API secrets in frontend code.
+
+---
+
+# PART 12 — DEVELOPMENT AND CODE QUALITY
+
+Do not generate a giant single-file application.
+
+Use reusable components and clear folder organisation.
+
+Suggested structure:
+
+src/
+  app/
+  components/
+    ui/
+    layout/
+    maps/
+    charts/
+    forms/
+  features/
+    auth/
+    citizen/
+    complaints/
+    ai/
+    government/
+    challenges/
+    students/
+    teams/
+    projects/
+    faculty/
+    industry/
+    admin/
+    notifications/
+  hooks/
+  lib/
+  services/
+  types/
+  utils/
+  routes/
+
+server/
+  src/
+    modules/
+      auth/
+      users/
+      complaints/
+      ai/
+      departments/
+      challenges/
+      students/
+      teams/
+      projects/
+      faculty/
+      industry/
+      admin/
+      notifications/
+    middleware/
+    config/
+    utils/
+
+prisma/
+  schema.prisma
+  seed.ts
+
+Use:
+- Strong TypeScript types.
+- Reusable UI components.
+- Centralised API services.
+- Consistent error handling.
+- Form validation.
+- Clear loading and empty states.
+- Environment configuration.
+- README documentation.
+
+Do not leave broken imports or non-functional routes.
+
+---
+
+# PART 13 — HOW TO EXECUTE THIS TASK
+
+Work in stages.
+
+Do not try to generate everything in one rushed response.
+
+### Stage 1 — Analyse and plan
+
+First:
+- Read my attached FixGrid AI PDF.
+- Extract every feature.
+- Build a feature traceability checklist.
+- Design the application architecture.
+- Design the database schema.
+- Create the route map.
+- Create the UI design system.
+- Identify external integrations and required API keys.
+
+### Stage 2 — Build the foundation
+
+Create:
+- Project structure.
+- Frontend.
+- Backend.
+- Database.
+- Authentication.
+- Role-based routing.
+- Landing page.
+- Shared layout.
+- Design system.
+
+Run the application and fix all errors.
+
+### Stage 3 — Implement core civic workflows
+
+Implement citizen reporting and the complete government complaint lifecycle.
+
+Make sure the workflow works end to end.
+
+### Stage 4 — Implement innovation workflows
+
+Implement challenges, matching, teams, projects, mentorship and the Contribution Passport.
+
+### Stage 5 — Integrate AI, maps and analytics
+
+Connect real services where credentials are available.
+
+Build honest fallback modes.
+
+### Stage 6 — Final verification
+
+Test every role and every workflow.
+
+Verify:
+- All routes.
+- All buttons.
+- All forms.
+- Authentication.
+- Role permissions.
+- File upload.
+- Map interaction.
+- Complaint creation.
+- AI analysis.
+- Duplicate detection.
+- Department assignment.
+- Status updates.
+- Escalation.
+- Challenge conversion.
+- Student matching.
+- Team formation.
+- Project tasks.
+- Mentor review.
+- Contribution verification.
+
+Fix all errors before declaring the project complete.
+
+If the environment has execution limits, complete one stage at a time and continue from the existing codebase. Do not overwrite working code just to regenerate the application.
+
+---
+
+# PART 14 — FINAL SUCCESS CRITERIA
+
+The final application must have:
+
+- A memorable FixGrid AI landing page.
+- Six distinct role experiences.
+- Fully connected citizen and government workflows.
+- All four mandatory PS-3 requirements.
+- AI-assisted classification and duplicate detection.
+- Severity recommendations.
+- Automatic department assignment.
+- Complaint tracking.
+- Interactive maps and heatmaps.
+- Community feed and upvotes.
+- SLA escalation.
+- Government-approved challenge conversion.
+- Student skill matching.
+- Team formation.
+- Faculty mentorship.
+- Industry/CSR collaboration.
+- Project workspace.
+- Student Contribution Passport.
+- Admin dashboard.
+- Secure role permissions.
+- Responsive and animated UI.
+- Meaningful demo data.
+- Clear documentation.
+
+## FINAL INSTRUCTION
+
+Start by analysing the attached final FixGrid AI presentation and producing the implementation plan.
+
+Then begin building the actual application.
+
+Do not respond with only a proposal, architecture description, or static mockup.
+
+I want working code, a running application and a polished interface.
+
+Build FixGrid AI as a cohesive product where every major feature connects to a real workflow.
+
+**Our goal is not to make the application look impressive only in screenshots. Our goal is to make it impressive when judges click, explore, submit complaints, validate them, track them, create challenges and experience the entire platform.**

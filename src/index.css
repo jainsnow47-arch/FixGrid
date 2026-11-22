@@ -1,0 +1,112 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --fg-ivory: #F5F1DC;
+    --fg-ivory-card: #FAF8EE;
+    --fg-white: #FFFFFF;
+    --fg-mint: #D5EBDD;
+    --fg-sage: #7DBE9E;
+    --fg-forest: #245B45;
+    --fg-forest-deep: #1A4332;
+    --fg-orange: #F07832;
+    --fg-orange-hover: #D96522;
+    --fg-ink: #24332D;
+    --fg-muted: #55665F;
+    --fg-pink: #F3D7DD;
+    --fg-blue: #DCEBF3;
+    --fg-border: rgba(36, 91, 69, 0.14);
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    background-color: var(--fg-ivory);
+    color: var(--fg-ink);
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: 'Bricolage Grotesque', system-ui, sans-serif;
+  }
+
+  .font-mono-tabular {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Subtle civic grid backdrop pattern for hero & showcase panels */
+.fg-civic-grid {
+  background-image:
+    linear-gradient(to right, rgba(36, 91, 69, 0.055) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(36, 91, 69, 0.055) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.fg-dot-grid {
+  background-image: radial-gradient(rgba(36, 91, 69, 0.12) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Form control polish */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid rgba(36, 91, 69, 0.35);
+  outline-offset: 1px;
+}
+
+/* Leaflet map refinements matching FixGrid AI warm civic palette */
+.leaflet-container {
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  background: #DCEBF3;
+  z-index: 1;
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 10px;
+  background: #FAF8EE;
+  color: #24332D;
+  border: 1px solid rgba(36, 91, 69, 0.16);
+  box-shadow: 0 10px 28px -6px rgba(36, 51, 45, 0.16);
+}
+
+.leaflet-popup-tip {
+  background: #FAF8EE;
+}
+
+@keyframes fg-marker-pulse {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.75;
+  }
+  70% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+.fg-pulse-ring {
+  animation: fg-marker-pulse 2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fg-pulse-ring {
+    animation: none;
+  }
+  html {
+    scroll-behavior: auto !important;
+  }
+}

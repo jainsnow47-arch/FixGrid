@@ -1,0 +1,149 @@
+// FixGrid AI — Relational Database Schema Blueprint (PostgreSQL / Prisma reference)
+// Note: In this AI Studio runtime, server/config/db.js executes this exact relational
+// model natively via better-sqlite3 so the application starts with zero external DB config.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               Int       @id @default(autoincrement())
+  name             String
+  email            String    @unique
+  passwordHash     String
+  role             String    // citizen | government | student | faculty | industry | admin
+  institutionOrOrg String?
+  city             String?
+  ward             String?
+  verified         Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  deletedAt        DateTime?
+
+  studentProfile   StudentProfile?
+  facultyProfile   FacultyProfile?
+  industryProfile  IndustryProfile?
+  complaints       Complaint[]
+  votes            ComplaintVote[]
+  comments         ComplaintComment[]
+  notifications    Notification[]
+}
+
+model StudentProfile {
+  userId               Int      @id
+  user                 User     @relation(fields: [userId], references: [id])
+  university           String
+  degree               String
+  yearOfStudy          String
+  skillsJson           String
+  interestsJson        String
+  experienceSummary    String
+  availabilityHours    Int
+  city                 String
+  consentIndustryShare Boolean  @default(false)
+  updatedAt            DateTime @updatedAt
+}
+
+model FacultyProfile {
+  userId         Int     @id
+  user           User    @relation(fields: [userId], references: [id])
+  institution    String
+  department     String
+  specialization String
+  bio            String
+  verified       Boolean @default(false)
+}
+
+model IndustryProfile {
+  userId           Int     @id
+  user             User    @relation(fields: [userId], references: [id])
+  organizationName String
+  sector           String
+  csrFocus         String
+  website          String?
+  verified         Boolean @default(false)
+}
+
+model Department {
+  id           Int         @id @default(autoincrement())
+  name         String      @unique
+  code         String      @unique
+  jurisdiction String
+  description  String
+  active       Boolean     @default(true)
+  complaints   Complaint[]
+  challenges   CivicChallenge[]
+}
+
+model Complaint {
+  id                    Int       @id @default(autoincrement())
+  trackingCode          String    @unique
+  reporterId            Int
+  reporter              User      @relation(fields: [reporterId], references: [id])
+  title                 String
+  description           String
+  category              String
+  aiPredictedCategory   String?
+  aiSummary             String?
+  severity              String
+  aiRecommendedSeverity String?
+  aiExplanation         String?
+  aiKeywordsJson        String?
+  aiProvider            String?
+  latitude              Float
+  longitude             Float
+  address               String
+  locationSource        String
+  ward                  String?
+  status                String
+  departmentId          Int?
+  department            Department? @relation(fields: [departmentId], references: [id])
+  assignedOfficialName  String?
+  slaDeadlineAt         DateTime?
+  escalationLevel       Int       @default(0)
+  isOverdue             Boolean   @default(false)
+  resolutionNotes       String?
+  citizenFeedbackRating Int?
+  citizenFeedbackComment String?
+  isDemo                Boolean   @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  deletedAt             DateTime?
+}
+
+model CivicChallenge {
+  id             Int       @id @default(autoincrement())
+  challengeCode  String    @unique
+  complaintId    Int?
+  title          String
+  description    String
+  category       String
+  location       String
+  background     String
+  expectedOutcome String
+  skillsRequiredJson String
+  deliverablesJson   String
+  deadline       String
+  difficulty     String
+  departmentId   Int?
+  department     Department? @relation(fields: [departmentId], references: [id])
+  approvalStatus String
+  pilotStatus    String    @default("None")
+  isDemo         Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  message   String
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}

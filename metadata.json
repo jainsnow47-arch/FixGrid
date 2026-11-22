@@ -1,0 +1,6 @@
+{
+  "name": "FixGrid AI",
+  "description": "AI-powered civic issue management and community innovation ecosystem connecting citizens, government officials, students, faculty mentors, and industry partners. Report. Resolve. Innovate.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
