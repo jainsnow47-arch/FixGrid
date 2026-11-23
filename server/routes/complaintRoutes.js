@@ -2,8 +2,8 @@ import express from 'express';
 import db, { createNotification, logAudit } from '../config/db.js';
 import { ISSUE_CATEGORIES } from '../config/constants.js';
 import { optionalAuth, rateLimit, requireAuth } from '../middleware/auth.js';
-import { uploadMiddleware } from '../middleware/upload.js';
-import { analyzeCivicIssue, generateEmbedding } from '../services/aiService.js';
+import { audioUploadMiddleware, uploadMiddleware } from '../middleware/upload.js';
+import { analyzeCivicIssue, extractIssueFromVoice, generateEmbedding } from '../services/aiService.js';
 import { findPotentialDuplicates } from '../services/duplicateService.js';
 import { computeSlaDeadline } from '../services/slaService.js';
 
@@ -64,6 +64,48 @@ router.post('/live-suggest', requireAuth, rateLimit({ windowMs: 60000, max: 90 }
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Live AI suggestion failed.' });
+  }
+});
+
+// Process voice transcript + microphone audio stream with AI to auto-fill issue report fields
+router.post('/voice-extract', requireAuth, rateLimit({ windowMs: 60000, max: 30 }), audioUploadMiddleware.single('audio'), async (req, res) => {
+  try {
+    const {
+      transcript = '',
+      address = '',
+      ward = '',
+      latitude = 27.4924,
+      longitude = 77.6737,
+    } = req.body || {};
+
+    if ((!transcript || String(transcript).trim().length < 3) && !req.file?.buffer?.length) {
+      return res.status(400).json({ error: 'Please record your voice description or speak clearly before processing.' });
+    }
+
+    const result = await extractIssueFromVoice({
+      transcript: String(transcript || ''),
+      audioBuffer: req.file?.buffer || null,
+      audioMimeType: req.file?.mimetype || '',
+      currentAddress: String(address || ''),
+      currentWard: String(ward || ''),
+    });
+
+    const duplicates = findPotentialDuplicates({
+      title: result.extracted.title,
+      description: result.extracted.description,
+      category: result.extracted.category,
+      latitude: Number(latitude),
+      longitude: Number(longitude),
+      embedding: null,
+    });
+
+    return res.json({
+      ...result,
+      duplicates,
+    });
+  } catch (err) {
+    const statusCode = err.message && err.message.includes('No speech') ? 422 : 500;
+    return res.status(statusCode).json({ error: err.message || 'Voice processing failed.' });
   }
 });
 

@@ -333,3 +333,234 @@ export async function generateEmbedding(text) {
     return null;
   }
 }
+
+function cleanSpokenTranscript(raw = '') {
+  const trimmed = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (!trimmed) return '';
+  const capitalized = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  return /[.!?]$/.test(capitalized) ? capitalized : `${capitalized}.`;
+}
+
+function extractLocationHints(transcript = '') {
+  const wardMatch = transcript.match(/\bward\s*(?:no\.?|number)?\s*(\d{1,3})\b/i);
+  const ward = wardMatch ? `Ward ${wardMatch[1]}` : '';
+
+  const knownAreas = [
+    'Krishna Nagar',
+    'Holi Gate',
+    'Dampier Nagar',
+    'Govind Nagar',
+    'Vrindavan Road',
+    'Civil Lines',
+    'Masani',
+    'Bhuteshwar',
+    'Chhatikara',
+    'Radha Puram',
+  ];
+  const matchedArea = knownAreas.find((area) => transcript.toLowerCase().includes(area.toLowerCase()));
+
+  const phraseMatch = transcript.match(
+    /\b(?:near|at|outside|beside|opposite|behind|in front of|on)\s+([A-Za-z0-9\s,'-]{4,55}?)(?=(?:,|\.|and\s|it\s|which\s|where\s|causing\s|for\s|$))/i
+  );
+
+  let address = '';
+  if (phraseMatch && phraseMatch[1]) {
+    address = phraseMatch[1].trim().replace(/\s+/g, ' ');
+    if (matchedArea && !address.toLowerCase().includes(matchedArea.toLowerCase())) {
+      address = `${address}, ${matchedArea}`;
+    }
+    if (!address.toLowerCase().includes('mathura')) {
+      address = `${address}, Mathura`;
+    }
+  } else if (matchedArea) {
+    address = `${matchedArea}, Mathura`;
+  }
+
+  return {
+    address,
+    ward: ward && matchedArea ? `${ward} (${matchedArea})` : ward || (matchedArea ? matchedArea : ''),
+  };
+}
+
+function buildSmartTitle(description, predictedCategory, addressHint) {
+  const firstClause = description
+    .split(/[.!?]|\band\b|\bcausing\b/i)[0]
+    .replace(/^(hi|hello|there is|there's|i want to report|please fix)\s+/i, '')
+    .trim();
+
+  if (firstClause.length >= 10 && firstClause.length <= 72) {
+    return firstClause.charAt(0).toUpperCase() + firstClause.slice(1);
+  }
+  if (firstClause.length > 72) {
+    return `${firstClause.slice(0, 69).trim()}...`;
+  }
+  const shortLoc = addressHint ? ` near ${addressHint.split(',')[0]}` : '';
+  return `${predictedCategory}${shortLoc}`;
+}
+
+export async function extractIssueFromVoice({
+  transcript = '',
+  audioBuffer = null,
+  audioMimeType = '',
+  currentAddress = '',
+  currentWard = '',
+}) {
+  const ai = getGenAIClient();
+  let finalTranscript = String(transcript || '').trim();
+  const hasAudio = Boolean(audioBuffer && audioBuffer.length > 0);
+
+  // Step 1: If audio stream is present and Gemini is configured, transcribe accurately using gemini-3.5-transcribe
+  if (ai && hasAudio) {
+    try {
+      const cleanMime = String(audioMimeType || 'audio/webm').split(';')[0].trim() || 'audio/webm';
+      const transcriptionRes = await ai.models.generateContent({
+        model: 'gemini-3.5-transcribe',
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                mimeType: cleanMime,
+                data: audioBuffer.toString('base64'),
+              },
+            },
+            {
+              text: finalTranscript
+                ? `Transcribe this civic issue voice recording accurately. Browser speech recognition draft for reference: "${finalTranscript}". Return only the clean transcript text.`
+                : 'Transcribe this civic issue voice recording accurately into clean text. Return only the transcript.',
+            },
+          ],
+        },
+      });
+      const transcribedText = (transcriptionRes.text || '').trim();
+      if (transcribedText.length >= 3) {
+        finalTranscript = transcribedText;
+      }
+    } catch (err) {
+      console.warn('Gemini audio transcription fallback to Web Speech transcript:', err.message);
+    }
+  }
+
+  if (!finalTranscript || finalTranscript.length < 3) {
+    throw new Error('No speech was detected in your microphone input. Please speak clearly and try again.');
+  }
+
+  // Step 2: Structured AI extraction into report form fields
+  if (ai) {
+    try {
+      const prompt = `You are a civic intake assistant for FixGrid AI in Mathura, India.
+Convert the citizen's spoken civic issue description into structured issue report form fields.
+Allowed categories: ${ISSUE_CATEGORIES.join(', ')}.
+Allowed severities: ${SEVERITY_LEVELS.join(', ')}.
+
+Spoken Transcript: "${finalTranscript}"
+Existing Map Address Context: ${currentAddress || 'Not specified'}
+Existing Ward Context: ${currentWard || 'Not specified'}
+
+Return JSON with:
+- title: concise 5-10 word report headline
+- description: clear, polite 1-3 sentence issue description preserving all factual details and landmarks
+- category: exact match from allowed categories
+- recommendedSeverity: exact match from allowed severities
+- extractedAddress: specific street/landmark mentioned in speech (or empty string if none mentioned)
+- extractedWard: specific ward/locality mentioned in speech (or empty string if none mentioned)
+- priorityReason: brief reason for the priority level
+- keywords: up to 6 keywords
+- explanation: concise reasoning for category and priority
+- confidence: number between 0.5 and 0.99`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-4-hydrogen',
+        contents: prompt,
+        config: {
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          systemInstruction:
+            'Extract clean civic issue form fields strictly from the citizen transcript without inventing unmentioned locations or facts.',
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING },
+              description: { type: Type.STRING },
+              category: { type: Type.STRING },
+              recommendedSeverity: { type: Type.STRING },
+              extractedAddress: { type: Type.STRING },
+              extractedWard: { type: Type.STRING },
+              priorityReason: { type: Type.STRING },
+              keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
+              explanation: { type: Type.STRING },
+              confidence: { type: Type.NUMBER },
+            },
+            required: ['title', 'description', 'category', 'recommendedSeverity', 'explanation'],
+          },
+        },
+      });
+
+      const parsed = JSON.parse((response.text || '{}').trim());
+      const predictedCategory = ISSUE_CATEGORIES.includes(parsed.category)
+        ? parsed.category
+        : 'Other civic issues';
+      const recommendedSeverity = SEVERITY_LEVELS.includes(parsed.recommendedSeverity)
+        ? parsed.recommendedSeverity
+        : 'Medium';
+      const dept = findDepartmentForCategory(predictedCategory);
+      const signals = ['Web Speech voice transcript'];
+      if (hasAudio) signals.push('Microphone audio stream');
+      if (parsed.extractedAddress) signals.push('Spoken location landmark');
+
+      return {
+        extracted: {
+          transcript: finalTranscript,
+          title: (parsed.title || buildSmartTitle(finalTranscript, predictedCategory, parsed.extractedAddress)).trim(),
+          description: cleanSpokenTranscript(parsed.description || finalTranscript),
+          category: predictedCategory,
+          address: (parsed.extractedAddress || '').trim(),
+          ward: (parsed.extractedWard || '').trim(),
+        },
+        analysis: {
+          predictedCategory,
+          summary: cleanSpokenTranscript(parsed.description || finalTranscript),
+          recommendedSeverity,
+          priorityReason: parsed.priorityReason || parsed.explanation || 'Assessed from spoken issue details.',
+          keywords: Array.isArray(parsed.keywords) ? parsed.keywords.slice(0, 6) : [],
+          suggestedDepartmentId: dept.departmentId,
+          suggestedDepartmentName: dept.departmentName,
+          explanation: parsed.explanation || 'Extracted from citizen voice report.',
+          confidence: typeof parsed.confidence === 'number' ? Math.min(0.99, Math.max(0.5, parsed.confidence)) : 0.9,
+          signals,
+          provider: 'gemini-4-hydrogen',
+          isFallback: false,
+        },
+      };
+    } catch (err) {
+      console.warn('Gemini voice extraction fallback triggered:', err.message);
+    }
+  }
+
+  // Rule-based intelligent extraction fallback
+  const cleanedDesc = cleanSpokenTranscript(finalTranscript);
+  const locHints = extractLocationHints(cleanedDesc);
+  const triage = ruleBasedAnalyze({
+    title: cleanedDesc.slice(0, 80),
+    description: cleanedDesc,
+    userCategory: '',
+    address: locHints.address || currentAddress,
+  });
+
+  const signals = ['Web Speech voice transcript'];
+  if (hasAudio) signals.push('Microphone audio stream');
+  if (locHints.address) signals.push('Spoken location landmark');
+
+  triage.signals = signals;
+
+  return {
+    extracted: {
+      transcript: finalTranscript,
+      title: buildSmartTitle(cleanedDesc, triage.predictedCategory, locHints.address),
+      description: cleanedDesc,
+      category: triage.predictedCategory,
+      address: locHints.address,
+      ward: locHints.ward,
+    },
+    analysis: triage,
+  };
+}

@@ -50,3 +50,30 @@ export const uploadMiddleware = multer({
     cb(null, true);
   },
 });
+
+const ALLOWED_AUDIO_MIME = new Set([
+  'audio/webm',
+  'audio/webm;codecs=opus',
+  'audio/ogg',
+  'audio/ogg;codecs=opus',
+  'audio/mp4',
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/wav',
+  'audio/x-wav',
+]);
+
+export const audioUploadMiddleware = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB max voice clip
+    files: 1,
+  },
+  fileFilter: (_req, file, cb) => {
+    const baseMime = String(file.mimetype || '').split(';')[0].trim().toLowerCase();
+    if (!ALLOWED_AUDIO_MIME.has(baseMime) && !baseMime.startsWith('audio/')) {
+      return cb(new Error('Unsupported audio format. Allowed: WebM, OGG, MP4, MP3, WAV.'));
+    }
+    cb(null, true);
+  },
+});

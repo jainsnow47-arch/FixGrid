@@ -20,6 +20,7 @@ import { extractMediaMetadata } from '../../utils/imageMetadata.js';
 import { DashboardLayout } from '../../components/layout/DashboardLayout.jsx';
 import { CivicMap } from '../../components/maps/CivicMap.jsx';
 import { ComplaintDetailModal } from '../../components/complaints/ComplaintDetailModal.jsx';
+import { VoiceIssueRecorder } from '../../components/complaints/VoiceIssueRecorder.jsx';
 import { Card } from '../../components/ui/Card.jsx';
 import { Button } from '../../components/ui/Button.jsx';
 import { SeverityTag } from '../../components/ui/StatusTag.jsx';
@@ -51,6 +52,8 @@ export function ReportIssuePage() {
   const [duplicates, setDuplicates] = useState([]);
   const [inspectDupId, setInspectDupId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [voiceSnapshot, setVoiceSnapshot] = useState(null);
+  const [voiceTranscriptUsed, setVoiceTranscriptUsed] = useState('');
 
   const abortRef = useRef(null);
 
@@ -195,6 +198,43 @@ export function ReportIssuePage() {
     showToast('Map pin updated to match the photo’s GPS metadata.', 'success');
   };
 
+  const handleVoiceExtracted = (result) => {
+    if (!result?.extracted) return;
+    setVoiceSnapshot({ title, description, category, categoryLocked, address, ward, locationSource });
+
+    const { extracted, analysis, duplicates: voiceDups } = result;
+    if (extracted.title) setTitle(extracted.title);
+    if (extracted.description) setDescription(extracted.description);
+    if (extracted.category && ISSUE_CATEGORIES.includes(extracted.category)) {
+      setCategory(extracted.category);
+      setCategoryLocked(false);
+    }
+    if (extracted.address) {
+      setAddress(extracted.address);
+      setLocationSource('voice-extracted');
+    }
+    if (extracted.ward) {
+      setWard(extracted.ward);
+    }
+    if (analysis) setAiResult(analysis);
+    if (Array.isArray(voiceDups)) setDuplicates(voiceDups);
+    setVoiceTranscriptUsed(extracted.transcript || '');
+  };
+
+  const handleUndoVoiceFill = () => {
+    if (!voiceSnapshot) return;
+    setTitle(voiceSnapshot.title);
+    setDescription(voiceSnapshot.description);
+    setCategory(voiceSnapshot.category);
+    setCategoryLocked(voiceSnapshot.categoryLocked);
+    setAddress(voiceSnapshot.address);
+    setWard(voiceSnapshot.ward);
+    setLocationSource(voiceSnapshot.locationSource);
+    setVoiceSnapshot(null);
+    setVoiceTranscriptUsed('');
+    showToast('Reverted voice-filled fields.', 'info');
+  };
+
   const handleAnalyzeDraft = async () => {
     if (description.trim().length < 5 && !files[0] && !imageMetadata) {
       showToast('Enter a short description or attach a photo before running a full scan.', 'error');
@@ -313,7 +353,7 @@ export function ReportIssuePage() {
                 <div>
                   <h2 className="font-display text-base font-bold text-[#245B45]">01. What is the problem?</h2>
                   <p className="text-xs text-[#55665F] mt-0.5">
-                    As you type or upload a photo, FixGrid AI suggests category and priority in real time.
+                    Describe the issue by voice or typing — FixGrid AI predicts category and priority in real time.
                   </p>
                 </div>
                 <label className="inline-flex items-center gap-2 text-xs font-medium text-[#245B45] cursor-pointer select-none">
@@ -330,6 +370,38 @@ export function ReportIssuePage() {
                   <span>Auto-apply AI category</span>
                 </label>
               </div>
+
+              <VoiceIssueRecorder
+                address={address}
+                ward={ward}
+                position={position}
+                onExtracted={handleVoiceExtracted}
+              />
+
+              <AnimatePresence>
+                {voiceTranscriptUsed && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="rounded-lg bg-[#D5EBDD]/45 border border-[#245B45]/20 px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs"
+                  >
+                    <span className="text-[#1A4332]">
+                      <strong>Auto-filled from voice:</strong> “{voiceTranscriptUsed}”
+                    </span>
+                    {voiceSnapshot && (
+                      <button
+                        type="button"
+                        onClick={handleUndoVoiceFill}
+                        className="inline-flex items-center gap-1 font-semibold text-[#F07832] hover:underline cursor-pointer shrink-0"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>Undo</span>
+                      </button>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               <div>
                 <label className="block text-xs font-semibold text-[#24332D] mb-1">Short Headline</label>
