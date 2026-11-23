@@ -39,12 +39,15 @@ export function AdminDashboard() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2.5 shrink-0">
-              <Button variant="primary" onClick={() => navigate('/admin/users')}>
-                <span>Manage Users</span>
+              <Button variant="primary" onClick={() => navigate('/admin/analytics')}>
+                <span>Civic Analytics</span>
                 <ArrowRight className="w-4 h-4" />
               </Button>
+              <Button variant="secondary" onClick={() => navigate('/admin/users')}>
+                <span>Manage Users</span>
+              </Button>
               <Button variant="secondary" onClick={() => navigate('/admin/audit-logs')}>
-                <span>View Audit Trail</span>
+                <span>Audit Trail</span>
               </Button>
             </div>
           </div>

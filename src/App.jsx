@@ -11,6 +11,7 @@ import { LandingPage } from './pages/public/LandingPage.jsx';
 import { AuthPage } from './pages/public/AuthPage.jsx';
 import { CommunityFeedPage } from './pages/public/CommunityFeedPage.jsx';
 import { PublicChallengesPage } from './pages/public/PublicChallengesPage.jsx';
+import { CivicAnalyticsPage } from './pages/public/CivicAnalyticsPage.jsx';
 
 import { CitizenDashboard } from './pages/citizen/CitizenDashboard.jsx';
 import { ReportIssuePage } from './pages/citizen/ReportIssuePage.jsx';
@@ -56,6 +57,7 @@ function getRouteRank(pathname) {
   if (pathname === '/') return 0;
   if (pathname === '/community') return 1;
   if (pathname === '/challenges') return 2;
+  if (pathname === '/analytics') return 2;
   if (pathname === '/auth') return 3;
   if (DASHBOARD_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return 4;
   return 1;
@@ -106,6 +108,7 @@ function RouteLayer({ layerKey }) {
       <Route path="/auth" element={<AuthPage />} />
       <Route path="/community" element={<CommunityFeedPage />} />
       <Route path="/challenges" element={<PublicChallengesPage />} />
+      <Route path="/analytics" element={<CivicAnalyticsPage />} />
 
       {/* Persistent Animated Dashboard Shell */}
       <Route element={<DashboardShell />}>
@@ -121,6 +124,7 @@ function RouteLayer({ layerKey }) {
         <Route path="/government/departments" element={<ProtectedRoute allowedRoles={['government']}><GovDepartmentsPage /></ProtectedRoute>} />
         <Route path="/government/heatmap" element={<ProtectedRoute allowedRoles={['government']}><GovHeatmapPage /></ProtectedRoute>} />
         <Route path="/government/challenges" element={<ProtectedRoute allowedRoles={['government']}><GovChallengesPage /></ProtectedRoute>} />
+        <Route path="/government/analytics" element={<ProtectedRoute allowedRoles={['government']}><CivicAnalyticsPage insideDashboard /></ProtectedRoute>} />
 
         {/* Student Innovator Routes */}
         <Route path="/student/dashboard" element={<ProtectedRoute allowedRoles={['student']}><StudentDashboard /></ProtectedRoute>} />
@@ -149,6 +153,7 @@ function RouteLayer({ layerKey }) {
         <Route path="/admin/categories" element={<ProtectedRoute allowedRoles={['admin']}><AdminCategoriesPage /></ProtectedRoute>} />
         <Route path="/admin/settings" element={<ProtectedRoute allowedRoles={['admin']}><AdminSettingsPage /></ProtectedRoute>} />
         <Route path="/admin/audit-logs" element={<ProtectedRoute allowedRoles={['admin']}><AdminAuditLogsPage /></ProtectedRoute>} />
+        <Route path="/admin/analytics" element={<ProtectedRoute allowedRoles={['admin']}><CivicAnalyticsPage insideDashboard /></ProtectedRoute>} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

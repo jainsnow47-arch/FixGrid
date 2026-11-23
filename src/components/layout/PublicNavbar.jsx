@@ -40,6 +40,9 @@ export function PublicNavbar() {
           <Link to="/challenges" className={navLinkClass('/challenges')}>
             Challenges
           </Link>
+          <Link to="/analytics" className={navLinkClass('/analytics')}>
+            Civic Trends
+          </Link>
           <a href="/#how-it-works" className="py-1 text-[#24332D] hover:text-[#F07832] transition-colors whitespace-nowrap shrink-0">
             How It Works
           </a>
@@ -84,6 +87,9 @@ export function PublicNavbar() {
               </Link>
               <Link to="/challenges" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-medium text-[#24332D]">
                 Challenges
+              </Link>
+              <Link to="/analytics" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-medium text-[#24332D]">
+                Civic Trends
               </Link>
               <a href="/#how-it-works" onClick={() => setMobileOpen(false)} className="block py-2 text-sm font-medium text-[#24332D]">
                 How It Works

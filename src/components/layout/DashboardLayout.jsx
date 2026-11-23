@@ -21,6 +21,7 @@ import {
   Settings,
   ShieldCheck,
   SlidersHorizontal,
+  TrendingUp,
   UserCircle,
   Users,
   X,
@@ -44,6 +45,7 @@ const ROLE_NAV = {
     { to: '/government/complaints', label: 'Review Issues', icon: ShieldCheck },
     { to: '/government/departments', label: 'Departments & SLA', icon: Building2 },
     { to: '/government/heatmap', label: 'Live Map & Heatmap', icon: Flame },
+    { to: '/government/analytics', label: 'Improvement Trends', icon: TrendingUp },
     { to: '/government/challenges', label: 'Challenges & Pilots', icon: Lightbulb },
   ],
   student: [
@@ -68,6 +70,7 @@ const ROLE_NAV = {
   ],
   admin: [
     { to: '/admin/dashboard', label: 'System Overview', icon: LayoutDashboard },
+    { to: '/admin/analytics', label: 'Civic Analytics', icon: TrendingUp },
     { to: '/admin/users', label: 'Users & Roles', icon: Users },
     { to: '/admin/departments', label: 'Departments', icon: Building2 },
     { to: '/admin/categories', label: 'Issue Categories', icon: SlidersHorizontal },
@@ -197,6 +200,13 @@ function DashboardSidebar({ user, navItems, onCloseMobile, onSwitchRole, onLogou
           >
             <Lightbulb className="w-4 h-4 shrink-0" />
             <span>Open Challenges</span>
+          </Link>
+          <Link
+            to="/analytics"
+            className="flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-[#D5EBDD]/85 hover:bg-white/10 hover:text-white transition-colors"
+          >
+            <TrendingUp className="w-4 h-4 shrink-0" />
+            <span>Civic Trends (D3)</span>
           </Link>
         </div>
       </nav>

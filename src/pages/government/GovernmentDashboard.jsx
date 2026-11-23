@@ -145,13 +145,17 @@ export function GovernmentDashboard() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <Card animate delay={0.05} className="lg:col-span-7">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
               <div>
                 <h2 className="font-display text-base font-bold text-[#245B45]">
                   Issue Pipeline by Status
                 </h2>
                 <p className="text-xs text-[#55665F]">Current count of complaints across all lifecycle stages</p>
               </div>
+              <Button size="sm" variant="outline" onClick={() => navigate('/government/analytics')}>
+                <span>View D3 Trends</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Button>
             </div>
             <StatusDistributionChart data={data?.statusBreakdown || []} />
           </Card>
