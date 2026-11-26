@@ -108,7 +108,9 @@ router.get('/feed', optionalAuth, (req, res) => {
 router.get('/challenges', (_req, res) => {
   const rows = db
     .prepare(
-      `SELECT ch.*, d.name AS department_name, c.tracking_code AS source_complaint_code
+      `SELECT ch.*, d.name AS department_name,
+              c.id AS source_complaint_id, c.tracking_code AS source_complaint_code,
+              c.title AS source_complaint_title
        FROM civic_challenges ch
        LEFT JOIN departments d ON ch.department_id = d.id
        LEFT JOIN complaints c ON ch.complaint_id = c.id
