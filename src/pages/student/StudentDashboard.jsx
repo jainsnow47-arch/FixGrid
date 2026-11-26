@@ -110,9 +110,12 @@ export function StudentDashboard() {
               <StaggerItem key={ch.id}>
                 <Card interactive className="h-full flex flex-col justify-between space-y-3">
                   <div className="space-y-2.5">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-mono-tabular font-semibold text-[#245B45]">{ch.challenge_code}</span>
-                      <span className="font-mono-tabular font-bold text-[#F07832]">{ch.match.overallScore}% Match</span>
+                    <div className="flex items-center justify-between text-xs gap-2">
+                      <span className="font-mono-tabular font-semibold text-[#245B45]">
+                        {ch.challenge_code}
+                        {ch.source_complaint_code ? ` · Solves ${ch.source_complaint_code}` : ''}
+                      </span>
+                      <span className="font-mono-tabular font-bold text-[#F07832] shrink-0">{ch.match.overallScore}% Match</span>
                     </div>
                     <div className="w-full h-1.5 rounded-full bg-[#E8E4CE] overflow-hidden">
                       <motion.div

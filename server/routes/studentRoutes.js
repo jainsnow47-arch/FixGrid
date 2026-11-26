@@ -22,9 +22,12 @@ router.get('/dashboard', (req, res) => {
   const profile = getOrCreateProfile(req.user);
   const challenges = db
     .prepare(
-      `SELECT ch.*, d.name AS department_name
+      `SELECT ch.*, d.name AS department_name,
+              c.id AS source_complaint_id, c.tracking_code AS source_complaint_code,
+              c.title AS source_complaint_title, c.status AS source_complaint_status
        FROM civic_challenges ch
        LEFT JOIN departments d ON ch.department_id = d.id
+       LEFT JOIN complaints c ON ch.complaint_id = c.id
        WHERE ch.approval_status = 'Approved'
        ORDER BY ch.created_at DESC`
     )
@@ -156,7 +159,9 @@ router.get('/challenges', (req, res) => {
   const profile = getOrCreateProfile(req.user);
   const challenges = db
     .prepare(
-      `SELECT ch.*, d.name AS department_name, c.tracking_code AS source_complaint_code
+      `SELECT ch.*, d.name AS department_name,
+              c.id AS source_complaint_id, c.tracking_code AS source_complaint_code,
+              c.title AS source_complaint_title, c.status AS source_complaint_status
        FROM civic_challenges ch
        LEFT JOIN departments d ON ch.department_id = d.id
        LEFT JOIN complaints c ON ch.complaint_id = c.id

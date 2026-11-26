@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bookmark, CheckCircle2, Compass, Send } from 'lucide-react';
+import { Bookmark, CheckCircle2, Compass, ExternalLink, MapPin, Send } from 'lucide-react';
 import { apiRequest } from '../../services/api.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { DashboardLayout } from '../../components/layout/DashboardLayout.jsx';
@@ -7,6 +7,7 @@ import { Card } from '../../components/ui/Card.jsx';
 import { Button } from '../../components/ui/Button.jsx';
 import { Modal } from '../../components/ui/Modal.jsx';
 import { EmptyState } from '../../components/ui/EmptyState.jsx';
+import { ComplaintDetailModal } from '../../components/complaints/ComplaintDetailModal.jsx';
 import { AnimatePresence, motion } from 'motion/react';
 import { FG_EASE, SegmentedTabs, StaggerGrid, StaggerItem } from '../../components/ui/MotionPrimitives.jsx';
 
@@ -15,7 +16,9 @@ export function StudentChallengesPage() {
   const [challenges, setChallenges] = useState([]);
   const [teams, setTeams] = useState([]);
   const [filterTab, setFilterTab] = useState('all'); // 'all' | 'saved' | 'top'
+  const [categoryFilter, setCategoryFilter] = useState('');
   const [applyTarget, setApplyTarget] = useState(null);
+  const [inspectComplaintId, setInspectComplaintId] = useState(null);
   const [teamId, setTeamId] = useState('');
   const [proposal, setProposal] = useState('');
 
@@ -28,7 +31,10 @@ export function StudentChallengesPage() {
     load();
   }, []);
 
+  const categories = Array.from(new Set(challenges.map((c) => c.category).filter(Boolean))).sort();
+
   const visibleChallenges = challenges.filter((ch) => {
+    if (categoryFilter && ch.category !== categoryFilter) return false;
     if (filterTab === 'saved') return ch.saved;
     if (filterTab === 'top') return (ch.match?.overallScore || 0) >= 70;
     return true;
@@ -63,24 +69,38 @@ export function StudentChallengesPage() {
   return (
     <DashboardLayout
       title="Find Civic Challenges"
-      subtitle="See exactly why each challenge matches your skills, interests, availability, and location"
+      subtitle="Solve real neighborhood issues reported on FixGrid with skill-matched engineering briefs"
     >
       <div className="space-y-5">
-        <SegmentedTabs
-          layoutId="student-challenge-filter"
-          value={filterTab}
-          onChange={setFilterTab}
-          options={[
-            { value: 'all', label: `All Challenges (${challenges.length})` },
-            { value: 'top', label: 'Strong Matches (70%+)' },
-            { value: 'saved', label: 'Saved' },
-          ]}
-        />
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <SegmentedTabs
+            layoutId="student-challenge-filter"
+            value={filterTab}
+            onChange={setFilterTab}
+            options={[
+              { value: 'all', label: `All Challenges (${challenges.length})` },
+              { value: 'top', label: 'Strong Matches (70%+)' },
+              { value: 'saved', label: 'Saved' },
+            ]}
+          />
+
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            aria-label="Filter challenges by issue category"
+            className="rounded-lg border border-[#245B45]/20 bg-white px-3 py-2 text-xs text-[#24332D]"
+          >
+            <option value="">All Issue Categories ({challenges.length})</option>
+            {categories.map((cat) => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
+        </div>
 
         <AnimatePresence mode="wait">
           {visibleChallenges.length === 0 ? (
             <motion.div
-              key={`empty-${filterTab}`}
+              key={`empty-${filterTab}-${categoryFilter}`}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
@@ -91,16 +111,19 @@ export function StudentChallengesPage() {
                 title="No challenges match this filter"
                 description="Try viewing All Challenges or updating your skills in Skills & Privacy to unlock stronger matches."
                 actionLabel="Show All Challenges"
-                onAction={() => setFilterTab('all')}
+                onAction={() => {
+                  setFilterTab('all');
+                  setCategoryFilter('');
+                }}
               />
             </motion.div>
           ) : (
-            <StaggerGrid key={`list-${filterTab}`} immediate className="space-y-5">
+            <StaggerGrid key={`list-${filterTab}-${categoryFilter}`} immediate className="space-y-5">
               {visibleChallenges.map((ch) => (
                 <StaggerItem key={ch.id}>
                   <Card interactive className="space-y-4">
                     <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5">
-                      <div className="space-y-2 flex-1">
+                      <div className="space-y-2 flex-1 min-w-0">
                         <div className="flex flex-wrap items-center gap-2 text-xs text-[#55665F]">
                           <span className="font-mono-tabular font-semibold text-[#245B45]">{ch.challenge_code}</span>
                           <span>·</span>
@@ -112,9 +135,30 @@ export function StudentChallengesPage() {
                         </div>
                         <h2 className="font-display text-lg font-bold text-[#24332D]">{ch.title}</h2>
                         <p className="text-sm text-[#55665F] leading-relaxed">{ch.description}</p>
-                        <p className="text-xs text-[#24332D] pt-1">
+
+                        {ch.source_complaint_id && (
+                          <button
+                            type="button"
+                            onClick={() => setInspectComplaintId(ch.source_complaint_id)}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-[#F5F1DC] hover:bg-[#EDE7CA] border border-[#245B45]/18 px-3 py-1.5 text-xs text-[#245B45] font-medium transition-colors cursor-pointer text-left"
+                          >
+                            <MapPin className="w-3.5 h-3.5 text-[#F07832] shrink-0" />
+                            <span>
+                              Solves Website Issue <strong className="font-mono-tabular">{ch.source_complaint_code}</strong>
+                              {ch.source_complaint_title ? `: ${ch.source_complaint_title}` : ''}
+                            </span>
+                            <ExternalLink className="w-3 h-3 shrink-0 opacity-75" />
+                          </button>
+                        )}
+
+                        <p className="text-xs text-[#24332D] pt-0.5">
                           <strong>Expected Outcome:</strong> {ch.expected_outcome}
                         </p>
+                        {ch.skillsRequired?.length > 0 && (
+                          <p className="text-[11px] text-[#55665F]">
+                            <strong>Skills Needed:</strong> {ch.skillsRequired.join(' · ')}
+                          </p>
+                        )}
                       </div>
 
                       {/* Clear 5-Factor Match Breakdown */}
@@ -217,6 +261,12 @@ export function StudentChallengesPage() {
           </Button>
         </form>
       </Modal>
+
+      <ComplaintDetailModal
+        complaintId={inspectComplaintId}
+        open={Boolean(inspectComplaintId)}
+        onClose={() => setInspectComplaintId(null)}
+      />
     </DashboardLayout>
   );
 }

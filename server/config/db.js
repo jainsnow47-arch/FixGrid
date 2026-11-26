@@ -1069,10 +1069,174 @@ export function getAdminBootstrapStatus() {
   };
 }
 
+function ensureRealIssueChallenges() {
+  const govUser = db
+    .prepare("SELECT id FROM users WHERE role = 'government' AND deleted_at IS NULL ORDER BY id ASC LIMIT 1")
+    .get();
+  const govId = govUser ? govUser.id : null;
+
+  const findComplaintId = (code) => {
+    if (!code) return null;
+    const row = db.prepare('SELECT id FROM complaints WHERE tracking_code = ? AND deleted_at IS NULL').get(code);
+    return row ? row.id : null;
+  };
+
+  const findDeptId = (code) => {
+    const row = db.prepare('SELECT id FROM departments WHERE code = ?').get(code);
+    return row ? row.id : null;
+  };
+
+  const existsStmt = db.prepare('SELECT id FROM civic_challenges WHERE challenge_code = ?');
+  const insertStmt = db.prepare(`
+    INSERT INTO civic_challenges (
+      challenge_code, complaint_id, title, description, category, location,
+      background, expected_outcome, skills_required_json, deliverables_json,
+      deadline, difficulty, department_id, approval_status, created_by, approved_by, pilot_status, is_demo
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Approved', ?, ?, 'None', 1)
+  `);
+
+  const additionalChallenges = [
+    {
+      code: 'FG-CH-2026-04',
+      complaintCode: 'FG-MTR-2026-103',
+      title: 'Acoustic & Pressure-Transient Potable Water Pipe Leak Detector',
+      description:
+        'Build a clamp-on acoustic vibration and pressure-drop telemetry node to detect cracked cast-iron water mains like the Dampier Nagar Park curb rupture before potable water floods roads.',
+      category: 'Water leakage',
+      location: 'Dampier Nagar Park Edge Road & Ward 19 Lines, Mathura (Demo)',
+      background:
+        'Pressurized cast-iron distribution joints crack unnoticed until high-pressure water jets onto streets, wasting clean water and eroding road sub-bases.',
+      expectedOutcome:
+        'Non-invasive acoustic leak sensor prototype + Water Works valve isolation alert feed pinpointing leaks within 25 meters.',
+      skills: ['IoT Sensors', 'Embedded Systems', 'Data Analytics', 'LoRaWAN', 'React'],
+      deliverables: ['Clamp-On Acoustic Sensor Proof', 'Leak Signature Dataset', 'Water Works Alert UI'],
+      deadline: '2027-02-10',
+      difficulty: 'Advanced',
+      deptCode: 'WSPD',
+    },
+    {
+      code: 'FG-CH-2026-05',
+      complaintCode: 'FG-MTR-2026-104',
+      title: 'Smart Heritage-Zone Waste Bin Fill-Level & Dynamic Collection Router',
+      description:
+        'Design an ultrasonic bin-capacity monitor and route optimizer to prevent 48-hour waste overflows and stray-cattle scattering along high-footfall Vishram Ghat walkways.',
+      category: 'Garbage accumulation',
+      location: 'Vishram Ghat Approach Lane & Ward 04, Mathura (Demo)',
+      background:
+        'Fixed waste pickup schedules fail during market peaks and pilgrimage weekends, leaving communal bins overflowing across narrow pedestrian lanes.',
+      expectedOutcome:
+        'Solar ultrasonic fill-level unit + Sanitation & Solid Waste dispatch route planner prioritizing bins above 80% capacity.',
+      skills: ['IoT Sensors', 'GIS Mapping', 'Node.js', 'React', 'Data Analytics'],
+      deliverables: ['Ultrasonic Bin Unit Schematic', 'Dynamic Tipper Routing API', 'Ward 04 Pilot Report'],
+      deadline: '2027-02-18',
+      difficulty: 'Intermediate',
+      deptCode: 'SSWD',
+    },
+    {
+      code: 'FG-CH-2026-06',
+      complaintCode: 'FG-MTR-2026-106',
+      title: 'Citizen Geo-Cluster & Sub-Base Moisture Risk Scorer for Repeat Potholes',
+      description:
+        'Develop a spatial analytics and road-vibration scoring tool linking overlapping citizen reports (FG-MTR-2026-101 & FG-MTR-2026-106) to identify underlying pavement base failure at Krishna Nagar crossings.',
+      category: 'Pothole',
+      location: 'Krishna Nagar Market Crossing East & Ward 14, Mathura (Demo)',
+      background:
+        'Multiple overlapping pothole reports within 65 meters show that cold-mix surface patches fail rapidly without diagnosing sub-base water saturation.',
+      expectedOutcome:
+        'Geo-clustered repair priority index combining citizen photos, e-rickshaw accelerometer bumps, and drainage runoff overlays.',
+      skills: ['GIS Mapping', 'Computer Vision', 'Pavement Engineering', 'Data Analytics', 'React'],
+      deliverables: ['Duplicate-Cluster Heat Map', 'Sub-Base Risk Scoring Model', 'MRED Repair Priority Export'],
+      deadline: '2027-02-25',
+      difficulty: 'Intermediate',
+      deptCode: 'MRED',
+    },
+    {
+      code: 'FG-CH-2026-07',
+      complaintCode: 'FG-MTR-2026-105',
+      title: 'Automated Open-Drain Blockage & Culvert Clog Vision Classifier',
+      description:
+        'Create a low-power edge camera and turbidity check workflow that flags plastic/silt chokepoints in roadside culverts before monsoon storms trigger street waterlogging.',
+      category: 'Drainage problem',
+      location: 'Govardhan Chauraha Service Road & Ward 27 Culverts, Mathura (Demo)',
+      background:
+        'Open storm drains clog rapidly with plastic litter and silt between scheduled sweeps, turning minor showers into knee-deep road blockages.',
+      expectedOutcome:
+        'Annotated culvert blockage detector + Stormwater & Drainage desilting dispatch checklist.',
+      skills: ['Computer Vision', 'Drainage Design', 'GIS Mapping', 'Embedded Systems', 'AutoCAD'],
+      deliverables: ['Drain Blockage Classifier Model', 'Culvert Inspection CAD Note', 'Pre-Monsoon Alert Feed'],
+      deadline: '2027-03-05',
+      difficulty: 'Intermediate',
+      deptCode: 'SWDD',
+    },
+    {
+      code: 'FG-CH-2026-08',
+      complaintCode: 'FG-MTR-2026-101',
+      title: 'Accessible Footpath, Guardrail & Bus-Shelter Structural Audit App',
+      description:
+        'Build a mobile-friendly structural inspection web tool helping municipal teams log broken footpaths, damaged railings, and unsafe market curbs with automated material quantity estimates.',
+      category: 'Damaged public infrastructure',
+      location: 'Krishna Nagar & Central Market Corridors, Mathura (Demo)',
+      background:
+        'Cracked pedestrian kerbs, missing drain covers, and damaged bus-stop railings lack standardized bill-of-quantities estimates at intake.',
+      expectedOutcome:
+        'Photo-guided damage grading checklist generating concrete/steel repair estimates for civil engineers.',
+      skills: ['Pavement Engineering', 'Material Testing', 'React', 'Node.js', 'GIS Mapping'],
+      deliverables: ['Structural Audit Checklist UI', 'Material Quantity Estimator', 'Field Accessibility Report'],
+      deadline: '2027-03-12',
+      difficulty: 'Beginner',
+      deptCode: 'MRED',
+    },
+    {
+      code: 'FG-CH-2026-09',
+      complaintCode: 'FG-MTR-2026-103',
+      title: 'Smart Ward Water-Audit & Potable Distribution Loss Telemetry Dashboard',
+      description:
+        'Build an interactive balance-sheet dashboard pairing ward inlet flow readings with active citizen pipe-leakage reports to pinpoint high-loss municipal water corridors.',
+      category: 'Water leakage',
+      location: 'Dampier Nagar & Adjoining Municipal Zones, Mathura (Demo)',
+      background:
+        'Unaccounted-for potable water loss across aging municipal pipelines lowers tail-end household pressure and damages adjacent roads.',
+      expectedOutcome:
+        'Ward-level water loss correlation dashboard flagging suspected underground seepage segments for Water Works.',
+      skills: ['Data Analytics', 'Node.js', 'React', 'GIS Mapping', 'IoT Sensors'],
+      deliverables: ['Flow-vs-Report Correlation Engine', 'Interactive Zone Map', 'Water Conservation Brief'],
+      deadline: '2027-03-20',
+      difficulty: 'Intermediate',
+      deptCode: 'WSPD',
+    },
+  ];
+
+  const seedTx = db.transaction(() => {
+    for (const item of additionalChallenges) {
+      if (existsStmt.get(item.code)) continue;
+      insertStmt.run(
+        item.code,
+        findComplaintId(item.complaintCode),
+        item.title,
+        item.description,
+        item.category,
+        item.location,
+        item.background,
+        item.expectedOutcome,
+        JSON.stringify(item.skills),
+        JSON.stringify(item.deliverables),
+        item.deadline,
+        item.difficulty,
+        findDeptId(item.deptCode),
+        govId,
+        govId
+      );
+    }
+  });
+
+  seedTx();
+}
+
 createSchema();
 migrateSchema();
 seedDemoData();
 ensureAdminProvisioned();
+ensureRealIssueChallenges();
 
 export function logAudit(actorId, actorRole, action, entityType, entityId, details = {}) {
   db.prepare(`
