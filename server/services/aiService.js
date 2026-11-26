@@ -128,6 +128,69 @@ function buildSignals({ title, description, address, imageMetadata, hasVisualIma
   return signals;
 }
 
+export function buildSuggestedAction(category = 'Other civic issues', severity = 'Medium', departmentName = 'Municipal Engineering Team') {
+  const isUrgent = severity === 'Critical' || severity === 'High';
+  const actions = {
+    'Broken streetlight': isUrgent
+      ? 'Dispatch electrical safety crew immediately to isolate any exposed wiring, secure the pole, and restore street lighting.'
+      : 'Schedule electrical maintenance team to inspect pole wiring and replace the damaged lamp fixture.',
+    'Water leakage': isUrgent
+      ? 'Deploy rapid-response waterworks unit to isolate pipeline valve pressure and clamp the leaking main.'
+      : 'Schedule plumbing inspection crew to seal minor joint seepage and check nearby line pressure.',
+    'Waterlogging': isUrgent
+      ? 'Deploy storm-drain suction pumps and clear choked roadside inlets to restore safe traffic passage.'
+      : 'Assign drainage clearance crew to flush surface inlets and inspect slope runoff.',
+    'Drainage problem': isUrgent
+      ? 'Send sanitation & drainage crew immediately to desilt blocked chambers and secure open manhole hazards.'
+      : 'Schedule routine culvert desilting and drain cover inspection with sanitation staff.',
+    'Pothole': isUrgent
+      ? 'Place reflective safety cones around the cavity and dispatch asphalt patching crew to restore road surface.'
+      : 'Queue road maintenance team for cold-mix pothole filling and surface leveling.',
+    'Damaged road': isUrgent
+      ? 'Cordon unsafe road stretch and assign civil engineering unit for sub-base repair and resurfacing.'
+      : 'Include road segment in scheduled resurfacing and pavement maintenance cycle.',
+    'Garbage accumulation': isUrgent
+      ? 'Dispatch tipper truck and sanitation sweepers urgently to clear waste buildup and sanitize the perimeter.'
+      : 'Route municipal waste collection vehicle for scheduled bin clearance and street sweeping.',
+    'Damaged public infrastructure': isUrgent
+      ? 'Secure damaged public structure to prevent pedestrian injury and dispatch civil repair team.'
+      : 'Log structural inspection and schedule routine carpentry/masonry restoration.',
+  };
+
+  return (
+    actions[category] ||
+    `Assign field inspection officer from ${departmentName || 'the relevant municipal department'} to verify site conditions and initiate repair.`
+  );
+}
+
+const RAW_ERROR_PATTERNS = [
+  /RESOURCE_EXHAUSTED/i,
+  /PERMISSION_DENIED/i,
+  /API_KEY_INVALID/i,
+  /Fallback used:/i,
+  /fallback triggered/i,
+  /Quota exceeded/i,
+  /generativelanguage\.googleapis\.com/i,
+  /ai\.google\.dev/i,
+  /retryDelay/i,
+  /retry in \d+/i,
+  /\{\s*"error"\s*:/i,
+  /ApiError/i,
+  /status\s*:\s*4\d\d/i,
+];
+
+export function hasRawErrorContent(text) {
+  if (!text || typeof text !== 'string') return false;
+  return RAW_ERROR_PATTERNS.some((re) => re.test(text));
+}
+
+export function sanitizeAiExplanation(text, { category = 'Other civic issues', severity = 'Medium', departmentName = 'Municipal Engineering Department' } = {}) {
+  if (!text || typeof text !== 'string' || !text.trim() || hasRawErrorContent(text)) {
+    return `Classified under ${category} with ${severity} priority based on complaint details and location context. Recommended routing: ${departmentName}.`;
+  }
+  return text.trim();
+}
+
 function ruleBasedAnalyze({ title, description, userCategory, address, imageMetadata, hasVisualImage = false }) {
   const metaSummary = summarizeImageMetadata(imageMetadata);
   const combinedText = `${title || ''} ${description || ''} ${metaSummary.hintText || ''}`.toLowerCase();
@@ -159,7 +222,7 @@ function ruleBasedAnalyze({ title, description, userCategory, address, imageMeta
   const lowTerms = ['minor', 'small', 'slight', 'cosmetic', 'faded'];
 
   let severity = 'Medium';
-  let severityReason = 'Standard civic impact estimated from current text and context.';
+  let severityReason = 'Standard civic impact estimated from complaint details and context.';
 
   if (urgentTerms.some((t) => combinedText.includes(t))) {
     severity = 'Critical';
@@ -190,6 +253,7 @@ function ruleBasedAnalyze({ title, description, userCategory, address, imageMeta
   const summarySource = (description || title || metaSummary.hintText || '').trim();
   const summary = summarySource.length > 135 ? `${summarySource.slice(0, 132)}...` : summarySource;
   const signals = buildSignals({ title, description, address, imageMetadata, hasVisualImage });
+  const suggestedAction = buildSuggestedAction(predictedCategory, severity, dept.departmentName);
 
   const mediaNote = imageMetadata
     ? ` Media metadata reviewed (${imageMetadata.resolutionLabel || imageMetadata.mediaKind}${imageMetadata.hasExifGps ? ', EXIF GPS verified' : ''}${imageMetadata.recencyLabel ? `, ${imageMetadata.recencyLabel.toLowerCase()}` : ''}).`
@@ -200,12 +264,14 @@ function ruleBasedAnalyze({ title, description, userCategory, address, imageMeta
     summary: summary || `${predictedCategory} reported near ${address || 'Mathura'}.`,
     recommendedSeverity: severity,
     priorityReason: severityReason,
+    suggestedAction,
     keywords: Array.from(new Set([...matchedWords, ...tokens])).slice(0, 6),
     suggestedDepartmentId: dept.departmentId,
     suggestedDepartmentName: dept.departmentName,
-    explanation: `Predicted ${predictedCategory} (${severity} priority): ${severityReason}${mediaNote} Suggested routing: ${dept.departmentName}.`,
+    explanation: `${severityReason}${mediaNote} Recommended routing: ${dept.departmentName}.`,
     confidence,
     signals,
+    assessmentType: 'Automated Assessment',
     provider: 'rule-based-fallback',
     isFallback: true,
   };
@@ -254,13 +320,13 @@ Location: ${address || 'Mathura area'}
 Description: ${description || 'Not entered yet'}
 Image Metadata: ${metaSummary.summaryText}
 
-Return structured JSON predicting category, concise 1-sentence summary, priority level (recommendedSeverity), brief priorityReason, up to 6 keywords, confidence (0.4 to 0.99), and a concise explanation of why you predicted this category and priority from the text and media signals.`;
+Return structured JSON predicting category, concise 1-sentence summary, priority level (recommendedSeverity), brief priorityReason, concise suggestedAction for the municipal team, up to 6 keywords, confidence (0.4 to 0.99), and a concise explanation of why you predicted this category and priority from the text and media signals.`;
 
     parts.push({ text: promptText });
 
     const config = {
       systemInstruction:
-        'Return factual, cautious civic triage JSON. Weigh both user text and image metadata clues (filename hints, resolution, capture recency, EXIF GPS). Keep explanation concise and transparent.',
+        'Return factual, cautious civic triage JSON. Weigh both user text and image metadata clues (filename hints, resolution, capture recency, EXIF GPS). Keep explanation and suggestedAction concise and transparent.',
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
@@ -269,6 +335,7 @@ Return structured JSON predicting category, concise 1-sentence summary, priority
           summary: { type: Type.STRING },
           recommendedSeverity: { type: Type.STRING },
           priorityReason: { type: Type.STRING },
+          suggestedAction: { type: Type.STRING },
           keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
           explanation: { type: Type.STRING },
           confidence: { type: Type.NUMBER },
@@ -287,7 +354,16 @@ Return structured JSON predicting category, concise 1-sentence summary, priority
       config,
     });
 
-    const parsed = JSON.parse((response.text || '{}').trim());
+    const rawText = (response.text || '').trim();
+    if (!rawText) {
+      throw new Error('Empty response from Gemini model');
+    }
+
+    const parsed = JSON.parse(rawText);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Invalid structured response from Gemini model');
+    }
+
     const predictedCategory = ISSUE_CATEGORIES.includes(parsed.predictedCategory)
       ? parsed.predictedCategory
       : (ISSUE_CATEGORIES.includes(userCategory) ? userCategory : 'Other civic issues');
@@ -296,26 +372,34 @@ Return structured JSON predicting category, concise 1-sentence summary, priority
       : 'Medium';
     const dept = findDepartmentForCategory(predictedCategory);
     const signals = buildSignals({ title, description, address, imageMetadata, hasVisualImage });
+    const suggestedAction =
+      typeof parsed.suggestedAction === 'string' && parsed.suggestedAction.trim().length >= 8
+        ? parsed.suggestedAction.trim()
+        : buildSuggestedAction(predictedCategory, recommendedSeverity, dept.departmentName);
 
     return {
       predictedCategory,
       summary: parsed.summary || title || `${predictedCategory} report`,
       recommendedSeverity,
       priorityReason: parsed.priorityReason || parsed.explanation || 'Assessed from text and media context.',
+      suggestedAction,
       keywords: Array.isArray(parsed.keywords) ? parsed.keywords.slice(0, 6) : [],
       suggestedDepartmentId: dept.departmentId,
       suggestedDepartmentName: dept.departmentName,
-      explanation: parsed.explanation || 'Assessed from report text and image metadata.',
+      explanation: sanitizeAiExplanation(parsed.explanation, {
+        category: predictedCategory,
+        severity: recommendedSeverity,
+        departmentName: dept.departmentName,
+      }),
       confidence: typeof parsed.confidence === 'number' ? Math.min(0.99, Math.max(0.4, parsed.confidence)) : 0.88,
       signals,
+      assessmentType: 'AI Assessment',
       provider: 'gemini-4-hydrogen',
       isFallback: false,
     };
   } catch (err) {
-    console.warn('Gemini AI analysis fallback triggered:', err.message);
-    const fallback = ruleBasedAnalyze({ title, description, userCategory, address, imageMetadata, hasVisualImage });
-    fallback.explanation = `${fallback.explanation} (Fallback used: ${err.message})`;
-    return fallback;
+    console.warn('Gemini AI analysis fallback triggered:', err?.status || err?.code || err?.message || 'Unknown error');
+    return ruleBasedAnalyze({ title, description, userCategory, address, imageMetadata, hasVisualImage });
   }
 }
 
@@ -495,7 +579,15 @@ Return JSON with:
         },
       });
 
-      const parsed = JSON.parse((response.text || '{}').trim());
+      const rawVoiceText = (response.text || '').trim();
+      if (!rawVoiceText) {
+        throw new Error('Empty response from Gemini model');
+      }
+      const parsed = JSON.parse(rawVoiceText);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Invalid voice extraction payload');
+      }
+
       const predictedCategory = ISSUE_CATEGORIES.includes(parsed.category)
         ? parsed.category
         : 'Other civic issues';
@@ -506,6 +598,7 @@ Return JSON with:
       const signals = ['Web Speech voice transcript'];
       if (hasAudio) signals.push('Microphone audio stream');
       if (parsed.extractedAddress) signals.push('Spoken location landmark');
+      const suggestedAction = buildSuggestedAction(predictedCategory, recommendedSeverity, dept.departmentName);
 
       return {
         extracted: {
@@ -521,18 +614,24 @@ Return JSON with:
           summary: cleanSpokenTranscript(parsed.description || finalTranscript),
           recommendedSeverity,
           priorityReason: parsed.priorityReason || parsed.explanation || 'Assessed from spoken issue details.',
+          suggestedAction,
           keywords: Array.isArray(parsed.keywords) ? parsed.keywords.slice(0, 6) : [],
           suggestedDepartmentId: dept.departmentId,
           suggestedDepartmentName: dept.departmentName,
-          explanation: parsed.explanation || 'Extracted from citizen voice report.',
+          explanation: sanitizeAiExplanation(parsed.explanation, {
+            category: predictedCategory,
+            severity: recommendedSeverity,
+            departmentName: dept.departmentName,
+          }),
           confidence: typeof parsed.confidence === 'number' ? Math.min(0.99, Math.max(0.5, parsed.confidence)) : 0.9,
           signals,
+          assessmentType: 'AI Assessment',
           provider: 'gemini-4-hydrogen',
           isFallback: false,
         },
       };
     } catch (err) {
-      console.warn('Gemini voice extraction fallback triggered:', err.message);
+      console.warn('Gemini voice extraction fallback triggered:', err?.status || err?.code || err?.message || 'Unknown error');
     }
   }
 

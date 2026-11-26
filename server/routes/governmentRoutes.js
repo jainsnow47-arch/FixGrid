@@ -3,6 +3,7 @@ import db, { createNotification, logAudit } from '../config/db.js';
 import { COMPLAINT_STATUSES, ISSUE_CATEGORIES, SEVERITY_LEVELS } from '../config/constants.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { checkAndTriggerOverdueEscalations, computeSlaDeadline } from '../services/slaService.js';
+import { buildSuggestedAction, hasRawErrorContent, sanitizeAiExplanation } from '../services/aiService.js';
 
 const router = express.Router();
 router.use(requireAuth, requireRole('government', 'admin'));
@@ -77,18 +78,37 @@ router.get('/complaints', (req, res) => {
   }
   sql += ' ORDER BY c.is_overdue DESC, c.created_at DESC';
 
-  const complaints = db.prepare(sql).all(...params);
+  const rawComplaints = db.prepare(sql).all(...params);
+  const complaints = rawComplaints.map((c) => {
+    const predictedCat = c.ai_predicted_category || c.category;
+    const predictedPriority = c.ai_recommended_severity || c.severity;
+    const deptName = c.department_name || 'Municipal Engineering Department';
+    const wasRawError = hasRawErrorContent(c.ai_explanation);
+    const isGemini = String(c.ai_provider || '').startsWith('gemini') && !wasRawError;
+    return {
+      ...c,
+      ai_explanation: sanitizeAiExplanation(c.ai_explanation, {
+        category: predictedCat,
+        severity: predictedPriority,
+        departmentName: deptName,
+      }),
+      ai_assessment_type: isGemini ? 'AI Assessment' : 'Automated Assessment',
+      ai_is_fallback: !isGemini && (c.ai_provider === 'rule-based-fallback' || wasRawError),
+      ai_suggested_action: buildSuggestedAction(predictedCat, predictedPriority, deptName),
+    };
+  });
   const departments = db.prepare('SELECT * FROM departments WHERE active = 1 ORDER BY name ASC').all();
-  const duplicateLinks = db
-    .prepare(
-      `SELECT dl.*, p.tracking_code AS primary_code, p.title AS primary_title,
-              s.tracking_code AS duplicate_code, s.title AS duplicate_title
-       FROM complaint_duplicate_links dl
-       JOIN complaints p ON dl.primary_complaint_id = p.id
-       JOIN complaints s ON dl.duplicate_complaint_id = s.id
-       ORDER BY dl.created_at DESC`
-    )
-    .all();
+  const duplicateLinks =
+    db
+      .prepare(
+        `SELECT dl.*, p.tracking_code AS primary_code, p.title AS primary_title,
+                s.tracking_code AS duplicate_code, s.title AS duplicate_title
+         FROM complaint_duplicate_links dl
+         JOIN complaints p ON dl.primary_complaint_id = p.id
+         JOIN complaints s ON dl.duplicate_complaint_id = s.id
+         ORDER BY dl.created_at DESC`
+      )
+      .all();
 
   return res.json({ complaints, departments, duplicateLinks });
 });

@@ -3,7 +3,14 @@ import db, { createNotification, logAudit } from '../config/db.js';
 import { ISSUE_CATEGORIES } from '../config/constants.js';
 import { optionalAuth, rateLimit, requireAuth } from '../middleware/auth.js';
 import { audioUploadMiddleware, uploadMiddleware } from '../middleware/upload.js';
-import { analyzeCivicIssue, extractIssueFromVoice, generateEmbedding } from '../services/aiService.js';
+import {
+  analyzeCivicIssue,
+  buildSuggestedAction,
+  extractIssueFromVoice,
+  generateEmbedding,
+  hasRawErrorContent,
+  sanitizeAiExplanation,
+} from '../services/aiService.js';
 import { findPotentialDuplicates } from '../services/duplicateService.js';
 import { computeSlaDeadline } from '../services/slaService.js';
 
@@ -415,9 +422,30 @@ router.get('/:id', optionalAuth, (req, res) => {
     .prepare("SELECT id, challenge_code, title, approval_status FROM civic_challenges WHERE complaint_id = ? AND approval_status = 'Approved' LIMIT 1")
     .get(complaintId);
 
+  const predictedCat = complaint.ai_predicted_category || complaint.category;
+  const predictedPriority = complaint.ai_recommended_severity || complaint.severity;
+  const deptName = complaint.department_name || 'Municipal Engineering Department';
+  const wasRawError = hasRawErrorContent(complaint.ai_explanation);
+  const isGeminiProvider = String(complaint.ai_provider || '').startsWith('gemini') && !wasRawError;
+  const isFallback = !isGeminiProvider && (complaint.ai_provider === 'rule-based-fallback' || wasRawError);
+
+  const cleanExplanation = sanitizeAiExplanation(complaint.ai_explanation, {
+    category: predictedCat,
+    severity: predictedPriority,
+    departmentName: deptName,
+  });
+
+  const suggestedAction = buildSuggestedAction(predictedCat, predictedPriority, deptName);
+
   return res.json({
     complaint: {
       ...complaint,
+      ai_predicted_category: predictedCat,
+      ai_recommended_severity: predictedPriority,
+      ai_explanation: cleanExplanation,
+      ai_assessment_type: isGeminiProvider ? 'AI Assessment' : 'Automated Assessment',
+      ai_is_fallback: isFallback,
+      ai_suggested_action: suggestedAction,
       keywords: safeParse(complaint.ai_keywords_json, []),
       voteCount,
       userHasVoted,

@@ -271,15 +271,35 @@ export function GovComplaintsPage() {
       >
         <form onSubmit={handleSaveValidation} className="space-y-4">
           {editTarget && (
-            <div className="rounded-xl bg-[#DCEBF3]/55 border border-[#245B45]/15 p-3.5 text-xs space-y-1">
-              <p className="font-semibold text-[#245B45] flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-[#F07832]" />
-                <span>AI Recommendation ({editTarget.ai_provider})</span>
+            <div className="rounded-xl bg-[#F5F1DC]/85 border border-[#245B45]/18 p-3.5 text-xs space-y-2 min-w-0">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-bold text-[#245B45] flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-[#F07832] shrink-0" />
+                  <span>
+                    {editTarget.ai_assessment_type ||
+                      (String(editTarget.ai_provider || '').startsWith('gemini')
+                        ? 'AI Assessment'
+                        : 'Automated Assessment')}
+                  </span>
+                </p>
+              </div>
+              {editTarget.ai_is_fallback && (
+                <p className="text-[11px] text-[#8C520A] bg-[#FBF0D9]/80 border border-[#C4841D]/25 rounded-md px-2.5 py-1.5">
+                  Automated assessment used. AI service is temporarily unavailable.
+                </p>
+              )}
+              <p className="text-[#24332D] break-words">
+                Category: <strong>{editTarget.ai_predicted_category || editTarget.category}</strong> · Priority:{' '}
+                <strong>{editTarget.ai_recommended_severity || editTarget.severity}</strong>
               </p>
-              <p className="text-[#24332D]">
-                Category: <strong>{editTarget.ai_predicted_category}</strong> · Urgency: <strong>{editTarget.ai_recommended_severity}</strong>
-              </p>
-              {editTarget.ai_explanation && <p className="text-[#55665F]">{editTarget.ai_explanation}</p>}
+              {editTarget.ai_suggested_action && (
+                <p className="text-[#245B45] break-words">
+                  <strong>Suggested Action:</strong> {editTarget.ai_suggested_action}
+                </p>
+              )}
+              {editTarget.ai_explanation && (
+                <p className="text-[#55665F] break-words leading-relaxed">{editTarget.ai_explanation}</p>
+              )}
             </div>
           )}
 

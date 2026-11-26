@@ -681,6 +681,19 @@ export function ReportIssuePage() {
                     className="space-y-3 text-xs"
                   >
                     <div className="flex items-center justify-between py-1.5 border-b border-[#245B45]/10">
+                      <span className="text-[#55665F]">Assessment Method</span>
+                      <span className="font-semibold text-[#245B45]">
+                        {aiResult.assessmentType || (aiResult.isFallback ? 'Automated Assessment' : 'AI Assessment')}
+                      </span>
+                    </div>
+
+                    {aiResult.isFallback && (
+                      <p className="text-[11px] text-[#8C520A] bg-[#FBF0D9]/80 border border-[#C4841D]/25 rounded-lg px-2.5 py-1.5">
+                        Automated assessment used. AI service is temporarily unavailable.
+                      </p>
+                    )}
+
+                    <div className="flex items-center justify-between py-1.5 border-b border-[#245B45]/10">
                       <span className="text-[#55665F]">Predicted Category</span>
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-[#24332D]">{aiResult.predictedCategory}</span>
@@ -721,26 +734,33 @@ export function ReportIssuePage() {
 
                     <div className="py-1.5 border-b border-[#245B45]/10">
                       <span className="text-[#55665F] block mb-0.5">Suggested Department</span>
-                      <span className="font-semibold text-[#245B45]">{aiResult.suggestedDepartmentName}</span>
+                      <span className="font-semibold text-[#245B45] break-words">{aiResult.suggestedDepartmentName}</span>
                     </div>
+
+                    {aiResult.suggestedAction && (
+                      <div className="rounded-lg bg-[#D5EBDD]/45 border border-[#245B45]/15 p-3">
+                        <span className="font-semibold text-[#245B45] block mb-0.5">Suggested Action</span>
+                        <p className="text-[#24332D] leading-snug break-words">{aiResult.suggestedAction}</p>
+                      </div>
+                    )}
 
                     {Array.isArray(aiResult.signals) && aiResult.signals.length > 0 && (
                       <div className="py-1.5 border-b border-[#245B45]/10">
                         <span className="text-[#55665F] block mb-1">Signals Used</span>
-                        <p className="text-[#24332D] leading-snug">{aiResult.signals.join(' · ')}</p>
+                        <p className="text-[#24332D] leading-snug break-words">{aiResult.signals.join(' · ')}</p>
                       </div>
                     )}
 
                     {aiResult.priorityReason && (
                       <div>
                         <span className="text-[#55665F] block mb-0.5">Priority Rationale</span>
-                        <p className="text-[#24332D] leading-snug">{aiResult.priorityReason}</p>
+                        <p className="text-[#24332D] leading-snug break-words">{aiResult.priorityReason}</p>
                       </div>
                     )}
 
-                    <div className="rounded-lg bg-[#DCEBF3]/60 p-3">
-                      <span className="font-semibold text-[#245B45] block mb-1">Why AI suggested this</span>
-                      <p className="text-[#24332D] leading-relaxed">{aiResult.explanation}</p>
+                    <div className="rounded-lg bg-[#F5F1DC] border border-[#245B45]/14 p-3">
+                      <span className="font-semibold text-[#245B45] block mb-1">Assessment Summary</span>
+                      <p className="text-[#24332D] leading-relaxed break-words">{aiResult.explanation}</p>
                     </div>
                   </motion.div>
                 )}

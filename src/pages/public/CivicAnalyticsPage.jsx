@@ -5,6 +5,7 @@ import {
   BarChart3,
   CheckCircle2,
   Clock,
+  Download,
   Filter,
   RotateCcw,
   ShieldCheck,
@@ -12,6 +13,11 @@ import {
 } from 'lucide-react';
 import { apiRequest } from '../../services/api.js';
 import { useToast } from '../../context/ToastContext.jsx';
+import {
+  buildAnalyticsCsvFilename,
+  buildCivicAnalyticsCsv,
+  downloadCsvFile,
+} from '../../utils/csvExport.js';
 import { DashboardLayout } from '../../components/layout/DashboardLayout.jsx';
 import { PublicNavbar } from '../../components/layout/PublicNavbar.jsx';
 import {
@@ -80,6 +86,32 @@ export function CivicAnalyticsPage({ insideDashboard = false }) {
   const availableWards = data?.filters?.wards || [];
 
   const hasFilters = Boolean(category || ward || granularity !== 'day');
+  const hasExportableData = Boolean(
+    data && (timeline.length > 0 || categoryBreakdown.length > 0 || wardBreakdown.length > 0 || summary.totalSubmitted > 0)
+  );
+
+  const handleExportCsv = () => {
+    if (!hasExportableData) {
+      showToast('No civic trend data available to export for the current filters.', 'info');
+      return;
+    }
+    const exportedAt = new Date();
+    const csvContent = buildCivicAnalyticsCsv({
+      data,
+      granularity,
+      category,
+      ward,
+      exportedAt,
+    });
+    const filename = buildAnalyticsCsvFilename({
+      granularity,
+      category,
+      ward,
+      exportedAt,
+    });
+    downloadCsvFile(csvContent, filename);
+    showToast(`Exported ${filename}`, 'success');
+  };
 
   const content = (
     <div className="space-y-6">
@@ -132,7 +164,7 @@ export function CivicAnalyticsPage({ insideDashboard = false }) {
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
           <SegmentedTabs
             layoutId="fg-analytics-granularity"
             value={granularity}
@@ -142,6 +174,18 @@ export function CivicAnalyticsPage({ insideDashboard = false }) {
               { value: 'hour', label: '4-Hour Window' },
             ]}
           />
+
+          <Button
+            type="button"
+            size="sm"
+            variant="forest"
+            onClick={handleExportCsv}
+            disabled={loading || !hasExportableData}
+            aria-label="Export civic trend data to CSV"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Export to CSV</span>
+          </Button>
         </div>
       </Card>
 

@@ -62,7 +62,7 @@ export function StatusTimeline({ currentStatus, history = [] }) {
           <div className="space-y-2">
             {history.map((item) => (
               <div key={item.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs py-1.5 border-b border-[#245B45]/8 last:border-0">
-                <div>
+                <div className="min-w-0 break-words">
                   <span className="font-semibold text-[#245B45]">{item.status}</span>
                   <span className="mx-1.5 text-[#55665F]">·</span>
                   <span className="text-[#24332D]">{item.note}</span>
