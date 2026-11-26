@@ -7,6 +7,7 @@ import {
   FileText,
   Sparkles,
   RotateCcw,
+  XCircle,
 } from 'lucide-react';
 
 // Clean, non-pill semantic indicator pairing an icon + explicit label (WCAG accessible)
@@ -37,6 +38,7 @@ export function StatusTag({ status }) {
     'Escalated': { icon: ShieldAlert, cls: 'text-[#9B2226] bg-[#F3D7DD]' },
     'Resolved': { icon: CheckCircle2, cls: 'text-[#1A4332] bg-[#D5EBDD]' },
     'Reopened': { icon: RotateCcw, cls: 'text-[#B84A14] bg-[#FDE6D8]' },
+    'Rejected': { icon: XCircle, cls: 'text-[#9B2226] bg-[#F3D7DD]' },
   };
   const cfg = map[status] || map.Submitted;
   const Icon = cfg.icon;

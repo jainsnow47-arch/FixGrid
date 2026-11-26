@@ -29,7 +29,11 @@ export function extractBearerUser(req) {
   try {
     const payload = verifyToken(token);
     const user = db
-      .prepare('SELECT id, name, email, role, institution_or_org, city, ward, verified, created_at FROM users WHERE id = ? AND deleted_at IS NULL')
+      .prepare(
+        `SELECT id, name, email, role, institution_or_org, city, ward, verified, account_status, created_at
+         FROM users
+         WHERE id = ? AND deleted_at IS NULL AND (account_status IS NULL OR account_status = 'active')`
+      )
       .get(payload.sub);
     return user || null;
   } catch {

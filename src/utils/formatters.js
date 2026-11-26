@@ -37,6 +37,7 @@ export const COMPLAINT_STATUSES = [
   'Escalated',
   'Resolved',
   'Reopened',
+  'Rejected',
 ];
 
 export const CATEGORY_COLORS = {

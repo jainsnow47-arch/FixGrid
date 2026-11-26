@@ -376,17 +376,32 @@ export function GovComplaintsPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold mb-1">Resolution Summary (Required when Resolved)</label>
+            <label className="block text-xs font-semibold mb-1">
+              {editForm.status === 'Rejected'
+                ? 'Rejection Reason (Required)'
+                : 'Resolution Summary (Required when Resolved)'}
+            </label>
             <textarea
               rows={2}
+              required={editForm.status === 'Rejected'}
+              minLength={editForm.status === 'Rejected' ? 5 : undefined}
               value={editForm.resolutionNotes || ''}
-              onChange={(e) => setEditForm({ ...editForm, resolutionNotes: e.target.value })}
+              onChange={(e) => setEditForm({ ...editForm, resolutionNotes: e.target.value, rejectionReason: e.target.value })}
+              placeholder={
+                editForm.status === 'Rejected'
+                  ? 'Explain why this report is rejected (e.g., duplicate outside jurisdiction, insufficient location evidence)...'
+                  : 'Summarize field action taken when resolved...'
+              }
               className="w-full rounded-lg border border-[#245B45]/20 bg-white px-3 py-2 text-sm"
             />
           </div>
 
-          <Button type="submit" variant="forest" className="w-full">
-            Save Official Decision
+          <Button
+            type="submit"
+            variant={editForm.status === 'Rejected' ? 'danger' : 'forest'}
+            className="w-full"
+          >
+            {editForm.status === 'Rejected' ? 'Reject Complaint with Reason' : 'Save Official Decision'}
           </Button>
         </form>
       </Modal>

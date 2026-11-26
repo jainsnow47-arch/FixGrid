@@ -39,6 +39,7 @@ export const COMPLAINT_STATUSES = [
   'Escalated',
   'Resolved',
   'Reopened',
+  'Rejected',
 ];
 
 export const DEFAULT_SLA_RULES = [

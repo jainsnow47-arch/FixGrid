@@ -1004,8 +1004,73 @@ function seedDemoData() {
   `).run(govId, String(ch1), JSON.stringify({ note: 'Approved challenge conversion from FG-MTR-2026-105 (Demo Seed)' }));
 }
 
+function migrateSchema() {
+  const existingColumns = db
+    .prepare('PRAGMA table_info(users)')
+    .all()
+    .map((col) => col.name);
+
+  if (!existingColumns.includes('account_status')) {
+    db.exec("ALTER TABLE users ADD COLUMN account_status TEXT NOT NULL DEFAULT 'active'");
+  }
+  if (!existingColumns.includes('activation_token_hash')) {
+    db.exec('ALTER TABLE users ADD COLUMN activation_token_hash TEXT');
+  }
+  if (!existingColumns.includes('activation_expires_at')) {
+    db.exec('ALTER TABLE users ADD COLUMN activation_expires_at TEXT');
+  }
+  if (!existingColumns.includes('invited_by')) {
+    db.exec('ALTER TABLE users ADD COLUMN invited_by INTEGER REFERENCES users(id)');
+  }
+}
+
+export function ensureAdminProvisioned() {
+  const rawEmail = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+  const rawPassword = (process.env.ADMIN_PASSWORD || '').trim();
+  const rawName = (process.env.ADMIN_NAME || '').trim() || 'Platform Administrator';
+
+  if (!rawPassword || rawPassword.length < 8) {
+    return false;
+  }
+
+  const adminEmail = rawEmail || 'admin@fixgrid.local';
+  const existing = db.prepare('SELECT id, password_hash, role, verified, account_status FROM users WHERE email = ?').get(adminEmail);
+
+  if (existing) {
+    const matchesExisting = existing.password_hash ? bcrypt.compareSync(rawPassword, existing.password_hash) : false;
+    const nextHash = matchesExisting ? existing.password_hash : bcrypt.hashSync(rawPassword, 10);
+    db.prepare(
+      `UPDATE users
+       SET name = ?, password_hash = ?, role = 'admin', verified = 1, account_status = 'active', deleted_at = NULL
+       WHERE id = ?`
+    ).run(rawName, nextHash, existing.id);
+  } else {
+    const passwordHash = bcrypt.hashSync(rawPassword, 10);
+    db.prepare(
+      `INSERT INTO users (name, email, password_hash, role, institution_or_org, city, ward, verified, account_status)
+       VALUES (?, ?, ?, 'admin', 'FixGrid Platform Governance', 'Mathura', 'Platform HQ', 1, 'active')`
+    ).run(rawName, adminEmail, passwordHash);
+  }
+  return true;
+}
+
+export function getAdminBootstrapStatus() {
+  const envPass = (process.env.ADMIN_PASSWORD || '').trim();
+  const adminProvisionedByEnv = envPass.length >= 8;
+  const claimedRow = db
+    .prepare("SELECT value_json FROM platform_settings WHERE key = 'admin_bootstrap_claimed'")
+    .get();
+  const claimed = claimedRow?.value_json === 'true';
+  return {
+    adminProvisionedByEnv,
+    canClaimAdminSetup: !adminProvisionedByEnv && !claimed,
+  };
+}
+
 createSchema();
+migrateSchema();
 seedDemoData();
+ensureAdminProvisioned();
 
 export function logAudit(actorId, actorRole, action, entityType, entityId, details = {}) {
   db.prepare(`

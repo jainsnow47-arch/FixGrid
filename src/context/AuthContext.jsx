@@ -44,6 +44,39 @@ export function AuthProvider({ children }) {
     [applyAuthSession]
   );
 
+  const governmentLogin = useCallback(
+    async (email, password) => {
+      const data = await apiRequest('/api/auth/government/login', {
+        method: 'POST',
+        body: { email, password },
+      });
+      return applyAuthSession(data);
+    },
+    [applyAuthSession]
+  );
+
+  const activateGovernmentAccount = useCallback(
+    async ({ email, activationCode, password }) => {
+      const data = await apiRequest('/api/auth/government/activate', {
+        method: 'POST',
+        body: { email, activationCode, password },
+      });
+      return { user: applyAuthSession(data), message: data.message };
+    },
+    [applyAuthSession]
+  );
+
+  const claimAdminAccount = useCallback(
+    async ({ name, email, password }) => {
+      const data = await apiRequest('/api/auth/admin/claim', {
+        method: 'POST',
+        body: { name, email, password },
+      });
+      return { user: applyAuthSession(data), message: data.message };
+    },
+    [applyAuthSession]
+  );
+
   const register = useCallback(
     async (payload) => {
       const data = await apiRequest('/api/auth/register', {
@@ -92,6 +125,9 @@ export function AuthProvider({ children }) {
         notifications,
         unreadCount,
         login,
+        governmentLogin,
+        activateGovernmentAccount,
+        claimAdminAccount,
         register,
         demoLogin,
         logout,
