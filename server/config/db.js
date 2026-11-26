@@ -13,12 +13,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..', '..');
 const dataDir = path.join(projectRoot, 'data');
+const customDbPath = process.env.FIXGRID_DB_PATH ? path.resolve(process.env.FIXGRID_DB_PATH) : null;
+const dbPath = customDbPath || path.join(dataDir, 'fixgrid.db');
+const targetDir = path.dirname(dbPath);
 
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
+if (!fs.existsSync(targetDir)) {
+  fs.mkdirSync(targetDir, { recursive: true });
 }
 
-const dbPath = path.join(dataDir, 'fixgrid.db');
 const db = new Database(dbPath);
 
 db.pragma('journal_mode = WAL');
@@ -1025,16 +1027,30 @@ export function createNotification(userId, title, message, link = '') {
 export function checkDatabaseHealth() {
   try {
     const row = db.prepare('SELECT 1 AS ok').get();
-    return { connected: Boolean(row && row.ok === 1) };
+    const fkEnabled = db.pragma('foreign_keys', { simple: true }) === 1;
+    const tableRow = db
+      .prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+      .get();
+    const tablesCount = tableRow?.count || 0;
+    return {
+      connected: Boolean(row && row.ok === 1 && tablesCount > 0),
+      foreignKeysEnabled: fkEnabled,
+      tablesCount,
+    };
   } catch (err) {
     console.error('SQLite health check failed:', err?.message || 'Unknown error');
-    return { connected: false };
+    return { connected: false, foreignKeysEnabled: false, tablesCount: 0 };
   }
 }
 
 export function closeDatabase() {
   try {
     if (db.open) {
+      try {
+        db.pragma('wal_checkpoint(TRUNCATE)');
+      } catch {
+        // Ignore checkpoint error during shutdown
+      }
       db.close();
     }
   } catch (err) {

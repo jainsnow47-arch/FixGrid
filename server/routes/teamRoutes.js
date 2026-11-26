@@ -64,15 +64,25 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'Team name must be at least 3 characters.' });
   }
 
+  let safeChallengeId = null;
+  if (challengeId !== null && challengeId !== undefined && challengeId !== '') {
+    safeChallengeId = Number(challengeId);
+    if (!Number.isInteger(safeChallengeId) || safeChallengeId <= 0) {
+      return res.status(400).json({ error: 'Invalid challenge ID.' });
+    }
+    const chExists = db.prepare("SELECT id FROM civic_challenges WHERE id = ? AND approval_status = 'Approved'").get(safeChallengeId);
+    if (!chExists) return res.status(404).json({ error: 'Target approved challenge not found.' });
+  }
+
   const result = db
     .prepare('INSERT INTO teams (name, description, challenge_id, leader_id, max_members) VALUES (?, ?, ?, ?, 5)')
-    .run(String(name).trim(), String(description).trim(), challengeId ? Number(challengeId) : null, req.user.id);
+    .run(String(name).trim(), String(description).trim(), safeChallengeId, req.user.id);
 
   const teamId = result.lastInsertRowid;
   db.prepare('INSERT INTO team_members (team_id, user_id, project_role) VALUES (?, ?, ?)').run(
     teamId,
     req.user.id,
-    String(myRole).trim()
+    String(myRole).trim() || 'Team Lead'
   );
 
   return res.status(201).json({ teamId, message: 'Team created.' });
@@ -81,27 +91,45 @@ router.post('/', (req, res) => {
 router.post('/:teamId/invite', (req, res) => {
   const teamId = Number(req.params.teamId);
   const { invitedUserId, proposedRole = 'Technical Contributor' } = req.body || {};
+  const targetUserId = Number(invitedUserId);
+
+  if (!Number.isInteger(teamId) || teamId <= 0 || !Number.isInteger(targetUserId) || targetUserId <= 0) {
+    return res.status(400).json({ error: 'Valid team and student user IDs are required.' });
+  }
+  if (targetUserId === req.user.id) {
+    return res.status(400).json({ error: 'You cannot invite yourself.' });
+  }
+
+  const team = db.prepare('SELECT id, name, max_members FROM teams WHERE id = ?').get(teamId);
+  if (!team) return res.status(404).json({ error: 'Team not found.' });
 
   const member = db.prepare('SELECT 1 FROM team_members WHERE team_id = ? AND user_id = ?').get(teamId, req.user.id);
   if (!member) return res.status(403).json({ error: 'Only team members can invite peers.' });
 
-  const alreadyInTeam = db.prepare('SELECT 1 FROM team_members WHERE team_id = ? AND user_id = ?').get(teamId, Number(invitedUserId));
+  const targetStudent = db.prepare("SELECT id FROM users WHERE id = ? AND role = 'student' AND deleted_at IS NULL").get(targetUserId);
+  if (!targetStudent) return res.status(404).json({ error: 'Invited student account not found.' });
+
+  const currentCount = db.prepare('SELECT COUNT(*) AS c FROM team_members WHERE team_id = ?').get(teamId).c;
+  if (currentCount >= (team.max_members || 5)) {
+    return res.status(400).json({ error: `Team has reached its maximum size (${team.max_members || 5} members).` });
+  }
+
+  const alreadyInTeam = db.prepare('SELECT 1 FROM team_members WHERE team_id = ? AND user_id = ?').get(teamId, targetUserId);
   if (alreadyInTeam) return res.status(409).json({ error: 'Student is already on this team.' });
 
   const pendingInvite = db
     .prepare("SELECT id FROM team_invitations WHERE team_id = ? AND invited_user_id = ? AND status = 'Pending'")
-    .get(teamId, Number(invitedUserId));
+    .get(teamId, targetUserId);
   if (pendingInvite) return res.status(409).json({ error: 'An invitation is already pending for this student.' });
 
-  const team = db.prepare('SELECT name FROM teams WHERE id = ?').get(teamId);
   db.prepare(
     `INSERT INTO team_invitations (team_id, invited_user_id, invited_by, proposed_role, status)
      VALUES (?, ?, ?, ?, 'Pending')`
-  ).run(teamId, Number(invitedUserId), req.user.id, String(proposedRole).trim());
+  ).run(teamId, targetUserId, req.user.id, String(proposedRole).trim());
 
   createNotification(
-    Number(invitedUserId),
-    `Team Invitation: ${team?.name}`,
+    targetUserId,
+    `Team Invitation: ${team.name}`,
     `${req.user.name} invited you to join as ${proposedRole}.`,
     '/student/teams'
   );
@@ -112,12 +140,26 @@ router.post('/:teamId/invite', (req, res) => {
 router.post('/invitations/:invId/respond', (req, res) => {
   const invId = Number(req.params.invId);
   const { decision } = req.body || {};
+  if (!Number.isInteger(invId) || invId <= 0) {
+    return res.status(400).json({ error: 'Invalid invitation ID.' });
+  }
   if (!['Accepted', 'Rejected'].includes(decision)) {
     return res.status(400).json({ error: 'Decision must be Accepted or Rejected.' });
   }
 
   const inv = db.prepare('SELECT * FROM team_invitations WHERE id = ? AND invited_user_id = ?').get(invId, req.user.id);
   if (!inv) return res.status(404).json({ error: 'Invitation not found.' });
+  if (inv.status !== 'Pending') {
+    return res.status(409).json({ error: `Invitation has already been ${inv.status.toLowerCase()}.` });
+  }
+
+  if (decision === 'Accepted') {
+    const team = db.prepare('SELECT max_members FROM teams WHERE id = ?').get(inv.team_id);
+    const currentCount = db.prepare('SELECT COUNT(*) AS c FROM team_members WHERE team_id = ?').get(inv.team_id).c;
+    if (team && currentCount >= (team.max_members || 5)) {
+      return res.status(400).json({ error: 'Team is already at maximum member capacity.' });
+    }
+  }
 
   db.prepare('UPDATE team_invitations SET status = ? WHERE id = ?').run(decision, invId);
 
@@ -147,16 +189,23 @@ router.patch('/:teamId/members/:userId', (req, res) => {
   const targetUserId = Number(req.params.userId);
   const { projectRole } = req.body || {};
 
+  if (!Number.isInteger(teamId) || teamId <= 0 || !Number.isInteger(targetUserId) || targetUserId <= 0) {
+    return res.status(400).json({ error: 'Invalid team or user ID.' });
+  }
+
   const team = db.prepare('SELECT leader_id FROM teams WHERE id = ?').get(teamId);
   if (!team || team.leader_id !== req.user.id) {
     return res.status(403).json({ error: 'Only the team leader can assign project roles.' });
   }
 
-  db.prepare('UPDATE team_members SET project_role = ? WHERE team_id = ? AND user_id = ?').run(
+  const result = db.prepare('UPDATE team_members SET project_role = ? WHERE team_id = ? AND user_id = ?').run(
     String(projectRole || 'Contributor').trim(),
     teamId,
     targetUserId
   );
+  if (result.changes === 0) {
+    return res.status(404).json({ error: 'Target user is not a member of this team.' });
+  }
   return res.json({ message: 'Member role updated.' });
 });
 

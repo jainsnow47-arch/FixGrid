@@ -187,6 +187,13 @@ router.get('/challenges', (req, res) => {
 
 router.post('/challenges/:id/save', (req, res) => {
   const challengeId = Number(req.params.id);
+  if (!Number.isInteger(challengeId) || challengeId <= 0) {
+    return res.status(400).json({ error: 'Invalid challenge ID.' });
+  }
+  const challenge = db.prepare("SELECT id FROM civic_challenges WHERE id = ? AND approval_status = 'Approved'").get(challengeId);
+  if (!challenge) {
+    return res.status(404).json({ error: 'Approved challenge not found.' });
+  }
   const exists = db.prepare('SELECT 1 FROM saved_challenges WHERE user_id = ? AND challenge_id = ?').get(req.user.id, challengeId);
   if (exists) {
     db.prepare('DELETE FROM saved_challenges WHERE user_id = ? AND challenge_id = ?').run(req.user.id, challengeId);
@@ -198,6 +205,9 @@ router.post('/challenges/:id/save', (req, res) => {
 
 router.post('/challenges/:id/apply', (req, res) => {
   const challengeId = Number(req.params.id);
+  if (!Number.isInteger(challengeId) || challengeId <= 0) {
+    return res.status(400).json({ error: 'Invalid challenge ID.' });
+  }
   const { teamId = null, proposalSummary = '' } = req.body || {};
 
   if (!proposalSummary || String(proposalSummary).trim().length < 20) {

@@ -61,20 +61,34 @@ async function startServer() {
       return res.status(200).json({
         success: true,
         database: 'connected',
+        engine: 'sqlite',
+        foreignKeysEnabled: health.foreignKeysEnabled,
+        tablesCount: health.tablesCount,
         message: 'SQLite database connection is healthy',
       });
     }
     return res.status(503).json({
       success: false,
       database: 'disconnected',
+      engine: 'sqlite',
       message: 'SQLite database connection check failed',
     });
   });
 
   // Centralized API error handler (handles Multer errors & JSON errors cleanly)
   app.use('/api', (err, _req, res, _next) => {
-    const status = err.status || 400;
-    res.status(status).json({ error: err.message || 'Server error.' });
+    if (err?.name === 'MulterError') {
+      return res.status(400).json({ error: err.message || 'Invalid file upload.' });
+    }
+    if (err?.type === 'entity.parse.failed') {
+      return res.status(400).json({ error: 'Invalid JSON request payload.' });
+    }
+    const status = Number.isInteger(err?.status) ? err.status : 500;
+    if (status >= 500) {
+      console.error('Unhandled API error:', err?.message || err);
+      return res.status(status).json({ error: 'An internal server error occurred.' });
+    }
+    return res.status(status).json({ error: err?.message || 'Request failed.' });
   });
 
   if (!isProd) {

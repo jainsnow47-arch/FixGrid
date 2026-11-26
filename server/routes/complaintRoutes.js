@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import express from 'express';
 import db, { createNotification, logAudit } from '../config/db.js';
 import { ISSUE_CATEGORIES } from '../config/constants.js';
@@ -15,6 +16,32 @@ import { findPotentialDuplicates } from '../services/duplicateService.js';
 import { computeSlaDeadline } from '../services/slaService.js';
 
 const router = express.Router();
+
+function parsePositiveId(raw) {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+function cleanupUploadedFiles(files) {
+  for (const f of files || []) {
+    if (f?.path) {
+      try {
+        if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
+      } catch {
+        // Ignore cleanup failure
+      }
+    }
+  }
+}
+
+function generateUniqueTrackingCode() {
+  const maxRow = db.prepare('SELECT COALESCE(MAX(id), 0) AS maxId FROM complaints').get();
+  let seq = 101 + Number(maxRow?.maxId || 0);
+  while (db.prepare('SELECT 1 FROM complaints WHERE tracking_code = ?').get(`FG-MTR-2026-${seq}`)) {
+    seq += 1;
+  }
+  return `FG-MTR-2026-${seq}`;
+}
 
 function parseMetadataField(raw) {
   if (!raw) return null;
@@ -159,6 +186,10 @@ router.post('/analyze-draft', requireAuth, rateLimit({ windowMs: 60000, max: 30 
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Analysis failed.' });
+  } finally {
+    if (req.file) {
+      cleanupUploadedFiles([req.file]);
+    }
   }
 });
 
@@ -178,15 +209,18 @@ router.post('/', requireAuth, uploadMiddleware.array('media', 3), async (req, re
     } = req.body || {};
 
     if (!title || String(title).trim().length < 5) {
+      cleanupUploadedFiles(req.files);
       return res.status(400).json({ error: 'Complaint title must be at least 5 characters.' });
     }
     if (!description || String(description).trim().length < 15) {
+      cleanupUploadedFiles(req.files);
       return res.status(400).json({ error: 'Complaint description must be at least 15 characters.' });
     }
 
     const lat = Number(latitude);
     const lng = Number(longitude);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      cleanupUploadedFiles(req.files);
       return res.status(400).json({ error: 'Valid GPS or map coordinates are required.' });
     }
 
@@ -214,115 +248,120 @@ router.post('/', requireAuth, uploadMiddleware.array('media', 3), async (req, re
     const departmentId = catMapping?.default_department_id || aiResult.suggestedDepartmentId;
 
     const slaDeadline = computeSlaDeadline(aiResult.recommendedSeverity);
-    const countRow = db.prepare('SELECT COUNT(*) AS count FROM complaints').get();
-    const trackingCode = `FG-MTR-2026-${101 + countRow.count}`;
 
-    const insertRes = db
-      .prepare(
-        `INSERT INTO complaints (
-          tracking_code, reporter_id, title, description, category, user_selected_category,
-          ai_predicted_category, ai_summary, severity, ai_recommended_severity, ai_explanation,
-          ai_keywords_json, ai_provider, ai_confidence, embedding_json, latitude, longitude,
-          address, location_source, ward, status, department_id, assigned_official_name,
-          sla_deadline_at, is_demo
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Awaiting official validation', ?, 'Awaiting Nodal Review', ?, 0)`
-      )
-      .run(
-        trackingCode,
-        req.user.id,
-        String(title).trim(),
-        String(description).trim(),
-        finalCategory,
-        userCategory,
-        aiResult.predictedCategory,
-        aiResult.summary,
-        aiResult.recommendedSeverity,
-        aiResult.recommendedSeverity,
-        aiResult.explanation,
-        JSON.stringify(aiResult.keywords || []),
-        aiResult.provider,
-        aiResult.confidence,
-        embedding ? JSON.stringify(embedding) : null,
-        lat,
-        lng,
-        String(address || `Coordinates ${lat.toFixed(4)}, ${lng.toFixed(4)}`).trim(),
-        locationSource,
-        String(ward).trim(),
-        departmentId,
-        slaDeadline
+    const createComplaintTx = db.transaction(() => {
+      const trackingCode = generateUniqueTrackingCode();
+      const insertRes = db
+        .prepare(
+          `INSERT INTO complaints (
+            tracking_code, reporter_id, title, description, category, user_selected_category,
+            ai_predicted_category, ai_summary, severity, ai_recommended_severity, ai_explanation,
+            ai_keywords_json, ai_provider, ai_confidence, embedding_json, latitude, longitude,
+            address, location_source, ward, status, department_id, assigned_official_name,
+            sla_deadline_at, is_demo
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Awaiting official validation', ?, 'Awaiting Nodal Review', ?, 0)`
+        )
+        .run(
+          trackingCode,
+          req.user.id,
+          String(title).trim(),
+          String(description).trim(),
+          finalCategory,
+          userCategory,
+          aiResult.predictedCategory,
+          aiResult.summary,
+          aiResult.recommendedSeverity,
+          aiResult.recommendedSeverity,
+          aiResult.explanation,
+          JSON.stringify(aiResult.keywords || []),
+          aiResult.provider,
+          aiResult.confidence,
+          embedding ? JSON.stringify(embedding) : null,
+          lat,
+          lng,
+          String(address || `Coordinates ${lat.toFixed(4)}, ${lng.toFixed(4)}`).trim(),
+          locationSource,
+          String(ward).trim(),
+          departmentId,
+          slaDeadline
+        );
+
+      const complaintId = insertRes.lastInsertRowid;
+
+      // Save uploaded media files
+      for (const file of req.files || []) {
+        const mediaType = file.mimetype.startsWith('video/') ? 'video' : 'image';
+        db.prepare(
+          `INSERT INTO complaint_media (complaint_id, file_url, media_type, original_name, size_bytes)
+           VALUES (?, ?, ?, ?, ?)`
+        ).run(complaintId, `/uploads/${file.filename}`, mediaType, file.originalname, file.size);
+      }
+
+      // Status timeline entries
+      db.prepare(
+        `INSERT INTO complaint_status_history (complaint_id, status, note, actor_id, actor_role)
+         VALUES (?, 'Submitted', 'Citizen submitted civic issue report.', ?, ?)`
+      ).run(complaintId, req.user.id, req.user.role);
+
+      db.prepare(
+        `INSERT INTO complaint_status_history (complaint_id, status, note, actor_id, actor_role)
+         VALUES (?, 'AI analysis completed', ?, NULL, 'system')`
+      ).run(
+        complaintId,
+        `AI (${aiResult.provider}) predicted ${aiResult.predictedCategory} with ${aiResult.recommendedSeverity} severity.`
       );
 
-    const complaintId = insertRes.lastInsertRowid;
-
-    // Save uploaded media files
-    for (const file of req.files || []) {
-      const mediaType = file.mimetype.startsWith('video/') ? 'video' : 'image';
       db.prepare(
-        `INSERT INTO complaint_media (complaint_id, file_url, media_type, original_name, size_bytes)
-         VALUES (?, ?, ?, ?, ?)`
-      ).run(complaintId, `/uploads/${file.filename}`, mediaType, file.originalname, file.size);
-    }
+        `INSERT INTO complaint_status_history (complaint_id, status, note, actor_id, actor_role)
+         VALUES (?, 'Awaiting official validation', ?, NULL, 'system')`
+      ).run(complaintId, `Auto-routed to ${aiResult.suggestedDepartmentName} for human validation.`);
 
-    // Status timeline entries
-    db.prepare(
-      `INSERT INTO complaint_status_history (complaint_id, status, note, actor_id, actor_role)
-       VALUES (?, 'Submitted', 'Citizen submitted civic issue report.', ?, ?)`
-    ).run(complaintId, req.user.id, req.user.role);
+      // Duplicate detection — NEVER delete original complaints! Only create link records for review.
+      const duplicates = findPotentialDuplicates({
+        excludeId: complaintId,
+        title,
+        description,
+        category: finalCategory,
+        latitude: lat,
+        longitude: lng,
+        embedding,
+      });
 
-    db.prepare(
-      `INSERT INTO complaint_status_history (complaint_id, status, note, actor_id, actor_role)
-       VALUES (?, 'AI analysis completed', ?, NULL, 'system')`
-    ).run(
-      complaintId,
-      `AI (${aiResult.provider}) predicted ${aiResult.predictedCategory} with ${aiResult.recommendedSeverity} severity.`
-    );
+      for (const dup of duplicates.slice(0, 2)) {
+        db.prepare(
+          `INSERT INTO complaint_duplicate_links (primary_complaint_id, duplicate_complaint_id, similarity_score, distance_meters, reason, status)
+           VALUES (?, ?, ?, ?, ?, 'Pending review')`
+        ).run(dup.complaintId, complaintId, dup.similarityScore, dup.distanceMeters, dup.reason);
+      }
 
-    db.prepare(
-      `INSERT INTO complaint_status_history (complaint_id, status, note, actor_id, actor_role)
-       VALUES (?, 'Awaiting official validation', ?, NULL, 'system')`
-    ).run(complaintId, `Auto-routed to ${aiResult.suggestedDepartmentName} for human validation.`);
+      // Notify government officials
+      const govUsers = db.prepare("SELECT id FROM users WHERE role = 'government' AND deleted_at IS NULL").all();
+      for (const g of govUsers) {
+        createNotification(
+          g.id,
+          `New Report ${trackingCode} (${aiResult.recommendedSeverity})`,
+          `${finalCategory} reported at ${address || ward}. Human validation required.`,
+          '/government/complaints'
+        );
+      }
 
-    // Duplicate detection — NEVER delete original complaints! Only create link records for review.
-    const duplicates = findPotentialDuplicates({
-      excludeId: complaintId,
-      title,
-      description,
-      category: finalCategory,
-      latitude: lat,
-      longitude: lng,
-      embedding,
-    });
-
-    for (const dup of duplicates.slice(0, 2)) {
-      db.prepare(
-        `INSERT INTO complaint_duplicate_links (primary_complaint_id, duplicate_complaint_id, similarity_score, distance_meters, reason, status)
-         VALUES (?, ?, ?, ?, ?, 'Pending review')`
-      ).run(dup.complaintId, complaintId, dup.similarityScore, dup.distanceMeters, dup.reason);
-    }
-
-    // Notify government officials
-    const govUsers = db.prepare("SELECT id FROM users WHERE role = 'government' AND deleted_at IS NULL").all();
-    for (const g of govUsers) {
       createNotification(
-        g.id,
-        `New Report ${trackingCode} (${aiResult.recommendedSeverity})`,
-        `${finalCategory} reported at ${address || ward}. Human validation required.`,
-        '/government/complaints'
+        req.user.id,
+        `Report Registered: ${trackingCode}`,
+        `Your complaint has been analyzed and routed to ${aiResult.suggestedDepartmentName} for official validation.`,
+        '/citizen/my-complaints'
       );
-    }
 
-    createNotification(
-      req.user.id,
-      `Report Registered: ${trackingCode}`,
-      `Your complaint has been analyzed and routed to ${aiResult.suggestedDepartmentName} for official validation.`,
-      '/citizen/my-complaints'
-    );
+      logAudit(req.user.id, req.user.role, 'CREATE_COMPLAINT', 'complaints', complaintId, {
+        trackingCode,
+        category: finalCategory,
+        aiProvider: aiResult.provider,
+      });
 
-    logAudit(req.user.id, req.user.role, 'CREATE_COMPLAINT', 'complaints', complaintId, {
-      trackingCode,
-      category: finalCategory,
-      aiProvider: aiResult.provider,
+      return { complaintId, trackingCode, duplicates };
     });
+
+    const { complaintId, trackingCode, duplicates } = createComplaintTx();
 
     return res.status(201).json({
       complaintId,
@@ -331,6 +370,7 @@ router.post('/', requireAuth, uploadMiddleware.array('media', 3), async (req, re
       duplicatesFound: duplicates,
     });
   } catch (err) {
+    cleanupUploadedFiles(req.files);
     return res.status(500).json({ error: err.message || 'Failed to submit complaint.' });
   }
 });
@@ -354,7 +394,8 @@ router.get('/my', requireAuth, (req, res) => {
 
 // Full complaint details (timeline, media, comments, duplicate links)
 router.get('/:id', optionalAuth, (req, res) => {
-  const complaintId = Number(req.params.id);
+  const complaintId = parsePositiveId(req.params.id);
+  if (!complaintId) return res.status(400).json({ error: 'Invalid complaint ID.' });
   const complaint = db
     .prepare(
       `SELECT c.id, c.tracking_code, c.reporter_id, c.title, c.description, c.category,
@@ -461,7 +502,8 @@ router.get('/:id', optionalAuth, (req, res) => {
 
 // Toggle community support / upvote (prevents repeated upvotes per account)
 router.post('/:id/vote', requireAuth, (req, res) => {
-  const complaintId = Number(req.params.id);
+  const complaintId = parsePositiveId(req.params.id);
+  if (!complaintId) return res.status(400).json({ error: 'Invalid complaint ID.' });
   const exists = db.prepare('SELECT id FROM complaints WHERE id = ? AND deleted_at IS NULL').get(complaintId);
   if (!exists) return res.status(404).json({ error: 'Complaint not found.' });
 
@@ -481,7 +523,8 @@ router.post('/:id/vote', requireAuth, (req, res) => {
 
 // Add community comment
 router.post('/:id/comments', requireAuth, (req, res) => {
-  const complaintId = Number(req.params.id);
+  const complaintId = parsePositiveId(req.params.id);
+  if (!complaintId) return res.status(400).json({ error: 'Invalid complaint ID.' });
   const { body } = req.body || {};
   if (!body || String(body).trim().length < 2) {
     return res.status(400).json({ error: 'Comment cannot be empty.' });
@@ -500,12 +543,16 @@ router.post('/:id/comments', requireAuth, (req, res) => {
 
 // Citizen post-resolution feedback & reopen option
 router.post('/:id/feedback', requireAuth, (req, res) => {
-  const complaintId = Number(req.params.id);
+  const complaintId = parsePositiveId(req.params.id);
+  if (!complaintId) return res.status(400).json({ error: 'Invalid complaint ID.' });
   const { rating, comment = '', reopen = false } = req.body || {};
   const complaint = db.prepare('SELECT * FROM complaints WHERE id = ? AND deleted_at IS NULL').get(complaintId);
   if (!complaint) return res.status(404).json({ error: 'Complaint not found.' });
   if (complaint.reporter_id !== req.user.id) {
     return res.status(403).json({ error: 'Only the original reporter can submit post-resolution feedback.' });
+  }
+  if (reopen && complaint.status !== 'Resolved') {
+    return res.status(400).json({ error: 'Only resolved complaints can be reopened via post-resolution feedback.' });
   }
 
   const numRating = Math.min(5, Math.max(1, Number(rating) || 5));

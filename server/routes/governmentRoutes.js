@@ -8,6 +8,20 @@ import { buildSuggestedAction, hasRawErrorContent, sanitizeAiExplanation } from 
 const router = express.Router();
 router.use(requireAuth, requireRole('government', 'admin'));
 
+function parsePositiveId(raw) {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+function generateUniqueChallengeCode() {
+  const maxRow = db.prepare('SELECT COALESCE(MAX(id), 0) AS maxId FROM civic_challenges').get();
+  let seq = Number(maxRow?.maxId || 0) + 1;
+  while (db.prepare('SELECT 1 FROM civic_challenges WHERE challenge_code = ?').get(`FG-CH-2026-${String(seq).padStart(2, '0')}`)) {
+    seq += 1;
+  }
+  return `FG-CH-2026-${String(seq).padStart(2, '0')}`;
+}
+
 router.get('/dashboard', (_req, res) => {
   const total = db.prepare('SELECT COUNT(*) AS c FROM complaints WHERE deleted_at IS NULL').get().c;
   const pendingValidation = db.prepare("SELECT COUNT(*) AS c FROM complaints WHERE deleted_at IS NULL AND status IN ('Submitted', 'AI analysis completed', 'Awaiting official validation')").get().c;
@@ -115,7 +129,8 @@ router.get('/complaints', (req, res) => {
 
 // Validate / override AI classification, severity, department, and status
 router.patch('/complaints/:id', (req, res) => {
-  const complaintId = Number(req.params.id);
+  const complaintId = parsePositiveId(req.params.id);
+  if (!complaintId) return res.status(400).json({ error: 'Invalid complaint ID.' });
   const existing = db.prepare('SELECT * FROM complaints WHERE id = ? AND deleted_at IS NULL').get(complaintId);
   if (!existing) return res.status(404).json({ error: 'Complaint not found.' });
 
@@ -128,6 +143,15 @@ router.patch('/complaints/:id', (req, res) => {
     resolutionNotes = existing.resolution_notes,
     note = '',
   } = req.body || {};
+
+  let resolvedDeptId = existing.department_id;
+  if (departmentId !== undefined && departmentId !== null && departmentId !== '') {
+    const parsedDeptId = parsePositiveId(departmentId);
+    if (!parsedDeptId) return res.status(400).json({ error: 'Invalid department ID.' });
+    const deptExists = db.prepare('SELECT id FROM departments WHERE id = ?').get(parsedDeptId);
+    if (!deptExists) return res.status(400).json({ error: 'Selected department does not exist.' });
+    resolvedDeptId = parsedDeptId;
+  }
 
   const safeCategory = ISSUE_CATEGORIES.includes(category) ? category : existing.category;
   const safeSeverity = SEVERITY_LEVELS.includes(severity) ? severity : existing.severity;
@@ -145,7 +169,7 @@ router.patch('/complaints/:id', (req, res) => {
   ).run(
     safeCategory,
     safeSeverity,
-    departmentId ? Number(departmentId) : existing.department_id,
+    resolvedDeptId,
     safeStatus,
     String(assignedOfficialName || req.user.name).trim(),
     String(resolutionNotes || '').trim(),
@@ -184,7 +208,8 @@ router.patch('/complaints/:id', (req, res) => {
 
 // Confirm or reject duplicate complaint relationship (never deletes original!)
 router.patch('/duplicates/:linkId', (req, res) => {
-  const linkId = Number(req.params.linkId);
+  const linkId = parsePositiveId(req.params.linkId);
+  if (!linkId) return res.status(400).json({ error: 'Invalid duplicate link ID.' });
   const { decision } = req.body || {};
   if (!['Confirmed', 'Rejected'].includes(decision)) {
     return res.status(400).json({ error: 'Decision must be Confirmed or Rejected.' });
@@ -237,8 +262,7 @@ router.post('/challenges/convert', (req, res) => {
     return res.status(400).json({ error: 'Challenge title and description are required.' });
   }
 
-  const count = db.prepare('SELECT COUNT(*) AS c FROM civic_challenges').get().c;
-  const challengeCode = `FG-CH-2026-0${count + 1}`;
+  const challengeCode = generateUniqueChallengeCode();
 
   const result = db
     .prepare(
@@ -265,6 +289,13 @@ router.post('/challenges/convert', (req, res) => {
       req.user.id,
       req.user.id
     );
+
+  createNotification(
+    complaint.reporter_id,
+    `Report Converted to Civic Challenge ${challengeCode}`,
+    `Your report ${complaint.tracking_code} inspired an official student innovation challenge.`,
+    '/challenges'
+  );
 
   logAudit(req.user.id, req.user.role, 'CONVERT_COMPLAINT_TO_CHALLENGE', 'civic_challenges', result.lastInsertRowid, {
     challengeCode,
@@ -376,7 +407,8 @@ router.patch('/applications/:id', (req, res) => {
 });
 
 router.patch('/projects/:id/pilot', (req, res) => {
-  const projectId = Number(req.params.id);
+  const projectId = parsePositiveId(req.params.id);
+  if (!projectId) return res.status(400).json({ error: 'Invalid project ID.' });
   const { pilotApproved } = req.body || {};
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
   if (!project) return res.status(404).json({ error: 'Project not found.' });
@@ -387,6 +419,18 @@ router.patch('/projects/:id/pilot', (req, res) => {
     pilotApproved ? 'Approved Public-Sector Pilot' : 'None',
     project.challenge_id
   );
+
+  const team = db.prepare('SELECT leader_id FROM teams WHERE id = ?').get(project.team_id);
+  if (team?.leader_id) {
+    createNotification(
+      team.leader_id,
+      pilotApproved ? `Pilot Approved: ${project.title}` : `Pilot Status Updated: ${project.title}`,
+      pilotApproved
+        ? 'Government officials approved your project for a public-sector field pilot.'
+        : 'Public-sector pilot approval was withdrawn by government review.',
+      '/student/projects'
+    );
+  }
 
   logAudit(req.user.id, req.user.role, 'APPROVE_PILOT', 'projects', projectId, { pilotApproved: Boolean(pilotApproved) });
   return res.json({ message: pilotApproved ? 'Public-sector pilot approved.' : 'Pilot approval withdrawn.' });

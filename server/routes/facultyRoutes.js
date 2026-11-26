@@ -65,24 +65,53 @@ router.put('/profile', (req, res) => {
 });
 
 router.patch('/mentorship/:id', (req, res) => {
+  const assignmentId = Number(req.params.id);
+  if (!Number.isInteger(assignmentId) || assignmentId <= 0) {
+    return res.status(400).json({ error: 'Invalid mentorship request ID.' });
+  }
   const { status } = req.body || {};
   if (!['Accepted', 'Declined'].includes(status)) {
     return res.status(400).json({ error: 'Invalid decision.' });
   }
+  const assignment = db
+    .prepare(
+      `SELECT ma.*, p.title AS project_title, t.leader_id
+       FROM mentor_assignments ma
+       LEFT JOIN projects p ON ma.project_id = p.id
+       LEFT JOIN teams t ON p.team_id = t.id
+       WHERE ma.id = ? AND ma.faculty_id = ?`
+    )
+    .get(assignmentId, req.user.id);
+  if (!assignment) {
+    return res.status(404).json({ error: 'Mentorship request not found.' });
+  }
   db.prepare('UPDATE mentor_assignments SET status = ? WHERE id = ? AND faculty_id = ?').run(
     status,
-    Number(req.params.id),
+    assignmentId,
     req.user.id
   );
+  if (assignment.leader_id) {
+    createNotification(
+      assignment.leader_id,
+      `Mentorship Request ${status}`,
+      `${req.user.name} ${status.toLowerCase()} your mentorship request for ${assignment.project_title || 'your project'}.`,
+      '/student/projects'
+    );
+  }
   return res.json({ message: `Mentorship request ${status.toLowerCase()}.` });
 });
 
 router.post('/projects/:projectId/feedback', (req, res) => {
   const projectId = Number(req.params.projectId);
+  if (!Number.isInteger(projectId) || projectId <= 0) {
+    return res.status(400).json({ error: 'Invalid project ID.' });
+  }
   const { comment } = req.body || {};
   if (!comment || String(comment).trim().length < 3) {
     return res.status(400).json({ error: 'Feedback comment cannot be empty.' });
   }
+  const project = db.prepare('SELECT id, title, team_id FROM projects WHERE id = ?').get(projectId);
+  if (!project) return res.status(404).json({ error: 'Project not found.' });
 
   db.prepare('INSERT INTO mentor_feedback (project_id, author_id, comment) VALUES (?, ?, ?)').run(
     projectId,
@@ -95,7 +124,16 @@ router.post('/projects/:projectId/feedback', (req, res) => {
 
 router.patch('/milestones/:milestoneId/evaluate', (req, res) => {
   const milestoneId = Number(req.params.milestoneId);
+  if (!Number.isInteger(milestoneId) || milestoneId <= 0) {
+    return res.status(400).json({ error: 'Invalid milestone ID.' });
+  }
   const { status = 'Verified', evaluation = '' } = req.body || {};
+  if (!['In Progress', 'Submitted', 'Verified', 'Needs Revision'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid milestone status.' });
+  }
+  const milestone = db.prepare('SELECT id FROM project_milestones WHERE id = ?').get(milestoneId);
+  if (!milestone) return res.status(404).json({ error: 'Milestone not found.' });
+
   db.prepare(
     `UPDATE project_milestones
      SET status = ?, faculty_evaluation = ?, evaluated_by = ?, evaluated_at = datetime('now')
@@ -123,6 +161,18 @@ router.post('/verify-contribution', (req, res) => {
     return res.status(400).json({ error: 'Student, project, role, and responsibilities are required.' });
   }
 
+  const parsedStudentId = Number(studentId);
+  const parsedProjectId = Number(projectId);
+  if (!Number.isInteger(parsedStudentId) || parsedStudentId <= 0 || !Number.isInteger(parsedProjectId) || parsedProjectId <= 0) {
+    return res.status(400).json({ error: 'Valid student and project IDs are required.' });
+  }
+
+  const studentExists = db.prepare("SELECT id FROM users WHERE id = ? AND role = 'student' AND deleted_at IS NULL").get(parsedStudentId);
+  if (!studentExists) return res.status(404).json({ error: 'Student account not found.' });
+
+  const projectExists = db.prepare('SELECT id FROM projects WHERE id = ?').get(parsedProjectId);
+  if (!projectExists) return res.status(404).json({ error: 'Project not found.' });
+
   const result = db
     .prepare(
       `INSERT INTO contribution_records (
@@ -131,27 +181,27 @@ router.post('/verify-contribution', (req, res) => {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
     )
     .run(
-      Number(studentId),
-      Number(projectId),
+      parsedStudentId,
+      parsedProjectId,
       String(roleHeld).trim(),
       String(responsibilities).trim(),
       JSON.stringify(Array.isArray(skills) ? skills : []),
-      Number(tasksCompleted) || 1,
+      Math.max(1, Number(tasksCompleted) || 1),
       String(deliverablesSummary).trim(),
       req.user.id,
       String(verificationNote).trim() || 'Verified by Faculty Mentor.'
     );
 
   createNotification(
-    Number(studentId),
+    parsedStudentId,
     'Contribution Passport Updated',
     `${req.user.name} verified your project contribution (${roleHeld}).`,
     '/student/passport'
   );
 
   logAudit(req.user.id, req.user.role, 'VERIFY_CONTRIBUTION', 'contribution_records', result.lastInsertRowid, {
-    studentId,
-    projectId,
+    studentId: parsedStudentId,
+    projectId: parsedProjectId,
   });
 
   return res.status(201).json({ message: 'Student contribution verified and added to Passport.' });

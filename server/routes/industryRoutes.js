@@ -97,17 +97,37 @@ router.post('/interests', (req, res) => {
     return res.status(400).json({ error: 'Support type and a clear message (min 10 chars) are required.' });
   }
 
+  let parsedChallengeId = null;
+  if (challengeId !== null && challengeId !== undefined && challengeId !== '') {
+    parsedChallengeId = Number(challengeId);
+    if (!Number.isInteger(parsedChallengeId) || parsedChallengeId <= 0) {
+      return res.status(400).json({ error: 'Invalid challenge ID.' });
+    }
+    const ch = db.prepare("SELECT id FROM civic_challenges WHERE id = ? AND approval_status = 'Approved'").get(parsedChallengeId);
+    if (!ch) return res.status(404).json({ error: 'Approved challenge not found.' });
+  }
+
+  let parsedProjectId = null;
+  if (projectId !== null && projectId !== undefined && projectId !== '') {
+    parsedProjectId = Number(projectId);
+    if (!Number.isInteger(parsedProjectId) || parsedProjectId <= 0) {
+      return res.status(400).json({ error: 'Invalid project ID.' });
+    }
+    const proj = db.prepare('SELECT id FROM projects WHERE id = ?').get(parsedProjectId);
+    if (!proj) return res.status(404).json({ error: 'Project not found.' });
+  }
+
   const result = db
     .prepare(
       `INSERT INTO industry_interests (partner_id, challenge_id, project_id, support_type, message, status)
        VALUES (?, ?, ?, ?, ?, 'Submitted')`
     )
-    .run(req.user.id, challengeId ? Number(challengeId) : null, projectId ? Number(projectId) : null, String(supportType).trim(), String(message).trim());
+    .run(req.user.id, parsedChallengeId, parsedProjectId, String(supportType).trim(), String(message).trim());
 
   logAudit(req.user.id, req.user.role, 'EXPRESS_CSR_INTEREST', 'industry_interests', result.lastInsertRowid, {
     supportType,
-    challengeId,
-    projectId,
+    challengeId: parsedChallengeId,
+    projectId: parsedProjectId,
   });
 
   return res.status(201).json({ message: 'Partnership support offer recorded. Public-sector pilots remain subject to official government approval.' });

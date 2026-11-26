@@ -1,6 +1,6 @@
 import express from 'express';
 import db, { logAudit } from '../config/db.js';
-import { ROLES } from '../config/constants.js';
+import { ROLES, SEVERITY_LEVELS } from '../config/constants.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { getAIStatus } from '../services/aiService.js';
 import { getMatchWeights } from '../services/matchingService.js';
@@ -57,8 +57,11 @@ router.get('/overview', (_req, res) => {
 
 router.patch('/users/:id', (req, res) => {
   const targetId = Number(req.params.id);
+  if (!Number.isInteger(targetId) || targetId <= 0) {
+    return res.status(400).json({ error: 'Invalid user ID.' });
+  }
   const { role, verified } = req.body || {};
-  const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(targetId);
+  const existing = db.prepare('SELECT * FROM users WHERE id = ? AND deleted_at IS NULL').get(targetId);
   if (!existing) return res.status(404).json({ error: 'User not found.' });
 
   const safeRole = ROLES.includes(role) ? role : existing.role;
@@ -85,20 +88,34 @@ router.post('/departments', (req, res) => {
 
 router.patch('/categories/:id', (req, res) => {
   const catId = Number(req.params.id);
+  if (!Number.isInteger(catId) || catId <= 0) return res.status(400).json({ error: 'Invalid category ID.' });
   const { defaultDepartmentId, defaultSeverity, active } = req.body || {};
   const cat = db.prepare('SELECT * FROM issue_categories WHERE id = ?').get(catId);
   if (!cat) return res.status(404).json({ error: 'Category not found.' });
 
+  let resolvedDeptId = cat.default_department_id;
+  if (defaultDepartmentId !== undefined && defaultDepartmentId !== null && defaultDepartmentId !== '') {
+    const parsedDept = Number(defaultDepartmentId);
+    if (!Number.isInteger(parsedDept) || parsedDept <= 0) {
+      return res.status(400).json({ error: 'Invalid department ID.' });
+    }
+    const deptExists = db.prepare('SELECT id FROM departments WHERE id = ?').get(parsedDept);
+    if (!deptExists) return res.status(400).json({ error: 'Department not found.' });
+    resolvedDeptId = parsedDept;
+  }
+
+  const safeSeverity = defaultSeverity && SEVERITY_LEVELS.includes(defaultSeverity) ? defaultSeverity : cat.default_severity;
+
   db.prepare(
     `UPDATE issue_categories SET default_department_id = ?, default_severity = ?, active = ? WHERE id = ?`
   ).run(
-    defaultDepartmentId ? Number(defaultDepartmentId) : cat.default_department_id,
-    defaultSeverity || cat.default_severity,
+    resolvedDeptId,
+    safeSeverity,
     typeof active === 'boolean' ? (active ? 1 : 0) : cat.active,
     catId
   );
 
-  logAudit(req.user.id, req.user.role, 'ADMIN_UPDATE_CATEGORY', 'issue_categories', catId, { defaultDepartmentId, defaultSeverity });
+  logAudit(req.user.id, req.user.role, 'ADMIN_UPDATE_CATEGORY', 'issue_categories', catId, { defaultDepartmentId: resolvedDeptId, defaultSeverity: safeSeverity });
   return res.json({ message: 'Category routing updated.' });
 });
 
@@ -108,9 +125,13 @@ router.put('/sla', (req, res) => {
   const stmt = db.prepare(
     `UPDATE sla_configurations SET target_hours = ?, escalation_target = ?, updated_at = datetime('now') WHERE severity = ?`
   );
-  for (const r of rules) {
-    stmt.run(Math.max(1, Number(r.target_hours) || 24), String(r.escalation_target || 'Nodal Officer'), r.severity);
-  }
+  const saveTx = db.transaction((items) => {
+    for (const r of items) {
+      if (!SEVERITY_LEVELS.includes(r.severity)) continue;
+      stmt.run(Math.max(1, Number(r.target_hours) || 24), String(r.escalation_target || 'Nodal Officer').trim(), r.severity);
+    }
+  });
+  saveTx(rules);
   logAudit(req.user.id, req.user.role, 'ADMIN_UPDATE_SLA', 'sla_configurations', 'all', { count: rules.length });
   return res.json({ message: 'SLA thresholds saved.' });
 });
@@ -135,8 +156,12 @@ router.put('/match-weights', (req, res) => {
 
 router.patch('/comments/:id/moderate', (req, res) => {
   const commentId = Number(req.params.id);
+  if (!Number.isInteger(commentId) || commentId <= 0) {
+    return res.status(400).json({ error: 'Invalid comment ID.' });
+  }
   const { isHidden } = req.body || {};
-  db.prepare('UPDATE complaint_comments SET is_hidden = ? WHERE id = ?').run(isHidden ? 1 : 0, commentId);
+  const result = db.prepare('UPDATE complaint_comments SET is_hidden = ? WHERE id = ?').run(isHidden ? 1 : 0, commentId);
+  if (result.changes === 0) return res.status(404).json({ error: 'Comment not found.' });
   logAudit(req.user.id, req.user.role, 'MODERATE_COMMENT', 'complaint_comments', commentId, { isHidden: Boolean(isHidden) });
   return res.json({ message: isHidden ? 'Comment hidden.' : 'Comment restored.' });
 });

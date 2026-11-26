@@ -45,7 +45,9 @@ export const uploadMiddleware = multer({
   },
   fileFilter: (_req, file, cb) => {
     if (!ALLOWED_MIME.has(file.mimetype)) {
-      return cb(new Error('Unsupported file type. Allowed: JPG, PNG, WebP, MP4, WebM, PDF.'));
+      const err = new Error('Unsupported file type. Allowed: JPG, PNG, WebP, MP4, WebM, PDF.');
+      err.status = 400;
+      return cb(err);
     }
     cb(null, true);
   },
@@ -72,7 +74,9 @@ export const audioUploadMiddleware = multer({
   fileFilter: (_req, file, cb) => {
     const baseMime = String(file.mimetype || '').split(';')[0].trim().toLowerCase();
     if (!ALLOWED_AUDIO_MIME.has(baseMime) && !baseMime.startsWith('audio/')) {
-      return cb(new Error('Unsupported audio format. Allowed: WebM, OGG, MP4, MP3, WAV.'));
+      const err = new Error('Unsupported audio format. Allowed: WebM, OGG, MP4, MP3, WAV.');
+      err.status = 400;
+      return cb(err);
     }
     cb(null, true);
   },
