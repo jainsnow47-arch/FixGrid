@@ -142,6 +142,7 @@ router.patch('/complaints/:id', (req, res) => {
     assignedOfficialName = existing.assigned_official_name,
     resolutionNotes = existing.resolution_notes,
     note = '',
+    rejectionReason = '',
   } = req.body || {};
 
   let resolvedDeptId = existing.department_id;
@@ -157,13 +158,21 @@ router.patch('/complaints/:id', (req, res) => {
   const safeSeverity = SEVERITY_LEVELS.includes(severity) ? severity : existing.severity;
   const safeStatus = COMPLAINT_STATUSES.includes(status) ? status : existing.status;
 
+  const cleanRejectionReason = String(rejectionReason || note || resolutionNotes || '').trim();
+  if (safeStatus === 'Rejected' && cleanRejectionReason.length < 5) {
+    return res.status(400).json({ error: 'Please provide a clear reason (at least 5 characters) when rejecting a complaint.' });
+  }
+
+  const finalResolutionNotes =
+    safeStatus === 'Rejected' ? cleanRejectionReason : String(resolutionNotes || '').trim();
+
   const newDeadline = safeSeverity !== existing.severity ? computeSlaDeadline(safeSeverity, new Date(existing.created_at)) : existing.sla_deadline_at;
 
   db.prepare(
     `UPDATE complaints
      SET category = ?, severity = ?, department_id = ?, status = ?,
          assigned_official_name = ?, resolution_notes = ?, sla_deadline_at = ?,
-         is_overdue = CASE WHEN ? = 'Resolved' THEN 0 ELSE is_overdue END,
+         is_overdue = CASE WHEN ? IN ('Resolved', 'Rejected') THEN 0 ELSE is_overdue END,
          updated_at = datetime('now')
      WHERE id = ?`
   ).run(
@@ -172,7 +181,7 @@ router.patch('/complaints/:id', (req, res) => {
     resolvedDeptId,
     safeStatus,
     String(assignedOfficialName || req.user.name).trim(),
-    String(resolutionNotes || '').trim(),
+    finalResolutionNotes,
     newDeadline,
     safeStatus,
     complaintId
@@ -182,7 +191,11 @@ router.patch('/complaints/:id', (req, res) => {
   if (safeCategory !== existing.category) changeNotes.push(`Category adjusted to ${safeCategory}`);
   if (safeSeverity !== existing.severity) changeNotes.push(`Severity adjusted to ${safeSeverity}`);
   if (safeStatus !== existing.status) changeNotes.push(`Status updated to ${safeStatus}`);
-  if (note) changeNotes.push(note);
+  if (safeStatus === 'Rejected') {
+    changeNotes.push(`Reason: ${cleanRejectionReason}`);
+  } else if (note) {
+    changeNotes.push(note);
+  }
 
   db.prepare(
     `INSERT INTO complaint_status_history (complaint_id, status, note, actor_id, actor_role)
@@ -307,6 +320,93 @@ router.post('/challenges/convert', (req, res) => {
     challengeCode,
     message: 'Complaint converted into approved Civic Innovation Challenge.',
   });
+});
+
+// Create standalone Civic Innovation Challenge (Government Official)
+router.post('/challenges', (req, res) => {
+  const {
+    title,
+    description,
+    category = 'Other civic issues',
+    location = 'Mathura Urban Limits',
+    background = '',
+    expectedOutcome = 'Field-ready prototype for municipal evaluation.',
+    skillsRequired = [],
+    deadline = '2027-02-28',
+    difficulty = 'Intermediate',
+    departmentId = null,
+    approvalStatus = 'Approved',
+  } = req.body || {};
+
+  if (!title || !description) {
+    return res.status(400).json({ error: 'Challenge title and description are required.' });
+  }
+
+  const safeCat = ISSUE_CATEGORIES.includes(category) ? category : 'Other civic issues';
+  const safeApproval = ['Approved', 'Pending'].includes(approvalStatus) ? approvalStatus : 'Approved';
+  const count = db.prepare('SELECT COUNT(*) AS c FROM civic_challenges').get().c;
+  const challengeCode = `FG-CH-2026-0${count + 1}`;
+
+  const result = db
+    .prepare(
+      `INSERT INTO civic_challenges (
+        challenge_code, title, description, category, location,
+        background, expected_outcome, skills_required_json, deliverables_json,
+        deadline, difficulty, department_id, approval_status, created_by, approved_by, is_demo
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
+    )
+    .run(
+      challengeCode,
+      String(title).trim(),
+      String(description).trim(),
+      safeCat,
+      String(location || 'Mathura Urban Limits').trim(),
+      String(background || description).trim(),
+      String(expectedOutcome).trim(),
+      JSON.stringify(Array.isArray(skillsRequired) ? skillsRequired : []),
+      JSON.stringify(['Working Prototype', 'Field Validation Report']),
+      deadline,
+      difficulty,
+      departmentId ? Number(departmentId) : null,
+      safeApproval,
+      req.user.id,
+      safeApproval === 'Approved' ? req.user.id : null
+    );
+
+  logAudit(req.user.id, req.user.role, 'CREATE_CHALLENGE', 'civic_challenges', result.lastInsertRowid, {
+    challengeCode,
+    approvalStatus: safeApproval,
+  });
+
+  return res.status(201).json({
+    challengeId: result.lastInsertRowid,
+    challengeCode,
+    message: `Civic challenge ${challengeCode} published.`,
+  });
+});
+
+// Approve or reject a Civic Innovation Challenge
+router.patch('/challenges/:id/approval', (req, res) => {
+  const challengeId = Number(req.params.id);
+  const { approvalStatus } = req.body || {};
+  if (!['Approved', 'Rejected', 'Pending'].includes(approvalStatus)) {
+    return res.status(400).json({ error: 'Invalid approval status.' });
+  }
+  const existing = db.prepare('SELECT id, challenge_code FROM civic_challenges WHERE id = ?').get(challengeId);
+  if (!existing) return res.status(404).json({ error: 'Challenge not found.' });
+
+  db.prepare('UPDATE civic_challenges SET approval_status = ?, approved_by = ? WHERE id = ?').run(
+    approvalStatus,
+    approvalStatus === 'Approved' ? req.user.id : null,
+    challengeId
+  );
+
+  logAudit(req.user.id, req.user.role, 'UPDATE_CHALLENGE_APPROVAL', 'civic_challenges', challengeId, {
+    challengeCode: existing.challenge_code,
+    approvalStatus,
+  });
+
+  return res.json({ message: `Challenge ${existing.challenge_code} marked as ${approvalStatus}.` });
 });
 
 // Challenge & Application / Pilot review

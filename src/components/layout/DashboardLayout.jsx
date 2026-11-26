@@ -477,6 +477,14 @@ export function DashboardShell() {
           />
 
           <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto overflow-x-clip">
+            {user && (user.role === 'faculty' || user.role === 'industry') && !user.verified && (
+              <div className="mb-5 rounded-xl bg-[#FBF0D9]/85 border border-[#C4841D]/30 px-4 py-3 text-xs text-[#8C520A] flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  <strong>{user.role === 'faculty' ? 'Institutional Verification Pending:' : 'Organization Verification Pending:'}</strong>{' '}
+                  Your {user.institutionOrOrg || 'account'} affiliation is awaiting review by the FixGrid platform administrator.
+                </span>
+              </div>
+            )}
             <AnimatePresence mode="wait" initial={false} custom={slideDirection}>
               <motion.div
                 key={location.pathname}

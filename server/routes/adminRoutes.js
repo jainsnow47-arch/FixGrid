@@ -1,4 +1,6 @@
+import crypto from 'node:crypto';
 import express from 'express';
+import bcrypt from 'bcryptjs';
 import db, { logAudit } from '../config/db.js';
 import { ROLES, SEVERITY_LEVELS } from '../config/constants.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
@@ -8,9 +10,22 @@ import { getMatchWeights } from '../services/matchingService.js';
 const router = express.Router();
 router.use(requireAuth, requireRole('admin'));
 
+function generateActivationCode() {
+  return `FG-GOV-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+}
+
+function hashActivationCode(code) {
+  return crypto.createHash('sha256').update(String(code || '').trim().toUpperCase()).digest('hex');
+}
+
 router.get('/overview', (_req, res) => {
   const users = db
-    .prepare('SELECT id, name, email, role, institution_or_org, city, ward, verified, created_at FROM users WHERE deleted_at IS NULL ORDER BY id ASC')
+    .prepare(
+      `SELECT id, name, email, role, institution_or_org, city, ward, verified, account_status, activation_expires_at, created_at
+       FROM users
+       WHERE deleted_at IS NULL
+       ORDER BY id ASC`
+    )
     .all();
   const departments = db.prepare('SELECT * FROM departments ORDER BY id ASC').all();
   const categories = db
@@ -55,20 +70,153 @@ router.get('/overview', (_req, res) => {
   });
 });
 
+// Admin-only creation or invitation of authorized Government Official accounts
+router.post('/government-officials', (req, res) => {
+  const {
+    name,
+    email,
+    departmentOrCell = 'Municipal Operations Cell',
+    ward = 'Central Zone',
+    city = 'Mathura',
+    mode = 'invite',
+    password = '',
+  } = req.body || {};
+
+  if (!name || typeof name !== 'string' || name.trim().length < 2) {
+    return res.status(400).json({ error: 'Official full name is required.' });
+  }
+  if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+    return res.status(400).json({ error: 'Valid official email address is required.' });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(cleanEmail);
+  if (existing) {
+    return res.status(409).json({ error: 'An account with this email already exists.' });
+  }
+
+  const isDirect = mode === 'direct';
+  if (isDirect && (!password || typeof password !== 'string' || password.length < 8)) {
+    return res.status(400).json({ error: 'Direct account creation requires an initial password of at least 8 characters.' });
+  }
+
+  let activationCode = null;
+  let activationExpiresAt = null;
+  let tokenHash = null;
+  let passwordHash;
+
+  if (isDirect) {
+    passwordHash = bcrypt.hashSync(password, 10);
+  } else {
+    activationCode = generateActivationCode();
+    tokenHash = hashActivationCode(activationCode);
+    activationExpiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+    // Placeholder unusable random bcrypt hash until official activates with their own password
+    passwordHash = bcrypt.hashSync(crypto.randomBytes(24).toString('hex'), 10);
+  }
+
+  const result = db
+    .prepare(
+      `INSERT INTO users (
+         name, email, password_hash, role, institution_or_org, city, ward,
+         verified, account_status, activation_token_hash, activation_expires_at, invited_by
+       ) VALUES (?, ?, ?, 'government', ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      name.trim(),
+      cleanEmail,
+      passwordHash,
+      String(departmentOrCell || 'Municipal Operations Cell').trim(),
+      String(city || 'Mathura').trim(),
+      String(ward || 'Central Zone').trim(),
+      isDirect ? 1 : 0,
+      isDirect ? 'active' : 'invited',
+      tokenHash,
+      activationExpiresAt,
+      req.user.id
+    );
+
+  const createdId = result.lastInsertRowid;
+  logAudit(req.user.id, req.user.role, 'ADMIN_CREATE_GOVERNMENT_OFFICIAL', 'users', createdId, {
+    email: cleanEmail,
+    mode: isDirect ? 'direct' : 'invite',
+  });
+
+  return res.status(201).json({
+    id: createdId,
+    email: cleanEmail,
+    mode: isDirect ? 'direct' : 'invite',
+    activationCode,
+    expiresAt: activationExpiresAt,
+    message: isDirect
+      ? 'Authorized Government Official account created and activated.'
+      : 'Government Official invitation issued. Share the one-time activation code securely.',
+  });
+});
+
+router.post('/users/:id/resend-invite', (req, res) => {
+  const targetId = Number(req.params.id);
+  const existing = db.prepare('SELECT id, email, role FROM users WHERE id = ? AND deleted_at IS NULL').get(targetId);
+  if (!existing) return res.status(404).json({ error: 'User not found.' });
+  if (existing.role !== 'government') {
+    return res.status(400).json({ error: 'Activation invites apply to Government Official accounts.' });
+  }
+
+  const activationCode = generateActivationCode();
+  const tokenHash = hashActivationCode(activationCode);
+  const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+
+  db.prepare(
+    `UPDATE users
+     SET account_status = 'invited', verified = 0, activation_token_hash = ?, activation_expires_at = ?, invited_by = ?
+     WHERE id = ?`
+  ).run(tokenHash, expiresAt, req.user.id, targetId);
+
+  logAudit(req.user.id, req.user.role, 'ADMIN_REISSUE_GOV_INVITE', 'users', targetId, { email: existing.email });
+
+  return res.json({
+    activationCode,
+    expiresAt,
+    message: 'New one-time activation code generated.',
+  });
+});
+
 router.patch('/users/:id', (req, res) => {
   const targetId = Number(req.params.id);
   if (!Number.isInteger(targetId) || targetId <= 0) {
     return res.status(400).json({ error: 'Invalid user ID.' });
   }
-  const { role, verified } = req.body || {};
+  const { role, verified, accountStatus } = req.body || {};
   const existing = db.prepare('SELECT * FROM users WHERE id = ? AND deleted_at IS NULL').get(targetId);
   if (!existing) return res.status(404).json({ error: 'User not found.' });
 
   const safeRole = ROLES.includes(role) ? role : existing.role;
   const safeVerified = typeof verified === 'boolean' ? (verified ? 1 : 0) : existing.verified;
+  const allowedStatuses = ['active', 'invited', 'suspended'];
+  const safeStatus = allowedStatuses.includes(accountStatus) ? accountStatus : existing.account_status || 'active';
 
-  db.prepare('UPDATE users SET role = ?, verified = ? WHERE id = ?').run(safeRole, safeVerified, targetId);
-  logAudit(req.user.id, req.user.role, 'ADMIN_UPDATE_USER', 'users', targetId, { role: safeRole, verified: Boolean(safeVerified) });
+  if (targetId === req.user.id && (safeRole !== 'admin' || safeStatus === 'suspended')) {
+    return res.status(400).json({ error: 'You cannot demote or suspend your own active Platform Admin session.' });
+  }
+
+  db.prepare('UPDATE users SET role = ?, verified = ?, account_status = ? WHERE id = ?').run(
+    safeRole,
+    safeVerified,
+    safeStatus,
+    targetId
+  );
+
+  if (safeRole === 'faculty') {
+    db.prepare('UPDATE faculty_profiles SET verified = ? WHERE user_id = ?').run(safeVerified, targetId);
+  } else if (safeRole === 'industry') {
+    db.prepare('UPDATE industry_profiles SET verified = ? WHERE user_id = ?').run(safeVerified, targetId);
+  }
+
+  logAudit(req.user.id, req.user.role, 'ADMIN_UPDATE_USER', 'users', targetId, {
+    role: safeRole,
+    verified: Boolean(safeVerified),
+    accountStatus: safeStatus,
+  });
   return res.json({ message: 'User permissions updated.' });
 });
 
