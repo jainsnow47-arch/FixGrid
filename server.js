@@ -4,7 +4,7 @@ import path from 'node:path';
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 
-import './server/config/db.js';
+import { checkDatabaseHealth, closeDatabase } from './server/config/db.js';
 import { uploadsDir } from './server/middleware/upload.js';
 import authRoutes from './server/routes/authRoutes.js';
 import publicRoutes from './server/routes/publicRoutes.js';
@@ -55,6 +55,22 @@ async function startServer() {
     res.json({ ok: true, service: 'FixGrid AI Server' });
   });
 
+  app.get('/api/health/db', (_req, res) => {
+    const health = checkDatabaseHealth();
+    if (health.connected) {
+      return res.status(200).json({
+        success: true,
+        database: 'connected',
+        message: 'SQLite database connection is healthy',
+      });
+    }
+    return res.status(503).json({
+      success: false,
+      database: 'disconnected',
+      message: 'SQLite database connection check failed',
+    });
+  });
+
   // Centralized API error handler (handles Multer errors & JSON errors cleanly)
   app.use('/api', (err, _req, res, _next) => {
     const status = err.status || 400;
@@ -80,9 +96,18 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`FixGrid AI server running at http://localhost:${PORT}`);
   });
+
+  const shutdown = () => {
+    server.close(() => {
+      closeDatabase();
+      process.exit(0);
+    });
+  };
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
 }
 
 startServer().catch((err) => {

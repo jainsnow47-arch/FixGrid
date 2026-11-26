@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
 import {
@@ -8,7 +9,11 @@ import {
   ISSUE_CATEGORIES,
 } from './constants.js';
 
-const dataDir = path.resolve(process.cwd(), 'data');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const projectRoot = path.resolve(__dirname, '..', '..');
+const dataDir = path.join(projectRoot, 'data');
+
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
@@ -17,6 +22,8 @@ const dbPath = path.join(dataDir, 'fixgrid.db');
 const db = new Database(dbPath);
 
 db.pragma('journal_mode = WAL');
+db.pragma('synchronous = NORMAL');
+db.pragma('busy_timeout = 5000');
 db.pragma('foreign_keys = ON');
 
 function createSchema() {
@@ -1013,6 +1020,26 @@ export function createNotification(userId, title, message, link = '') {
     INSERT INTO notifications (user_id, title, message, link)
     VALUES (?, ?, ?, ?)
   `).run(userId, title, message, link);
+}
+
+export function checkDatabaseHealth() {
+  try {
+    const row = db.prepare('SELECT 1 AS ok').get();
+    return { connected: Boolean(row && row.ok === 1) };
+  } catch (err) {
+    console.error('SQLite health check failed:', err?.message || 'Unknown error');
+    return { connected: false };
+  }
+}
+
+export function closeDatabase() {
+  try {
+    if (db.open) {
+      db.close();
+    }
+  } catch (err) {
+    console.error('Error closing SQLite database:', err?.message || 'Unknown error');
+  }
 }
 
 export default db;
